@@ -53,13 +53,19 @@ const seedWorkspaces: Workspace[] = [
   { id: 5, name: "Tax Partner", slug: "taxpartner", owner: "admin@taxpartner.pl", users: 5, clients: 29, plan: "Starter", status: "Wstrzymane", mrr: "0 zł", lastSeen: "12 dni temu" },
 ];
 
-const navItems: { label: AdminSection; icon: LucideIcon }[] = [
-  { label: "Pulpit", icon: LayoutDashboard },
-  { label: "Biura klientów", icon: Building2 },
-  { label: "Użytkownicy", icon: Users },
-  { label: "Subskrypcje", icon: CreditCard },
-  { label: "Zdarzenia", icon: FileClock },
-  { label: "Ustawienia", icon: Settings },
+const navGroups: { label: string; items: { label: AdminSection; icon: LucideIcon }[] }[] = [
+  { label: "PLATFORMA", items: [
+    { label: "Pulpit", icon: LayoutDashboard },
+    { label: "Biura klientów", icon: Building2 },
+    { label: "Użytkownicy", icon: Users },
+  ] },
+  { label: "ROZLICZENIA", items: [
+    { label: "Subskrypcje", icon: CreditCard },
+  ] },
+  { label: "NADZÓR I SYSTEM", items: [
+    { label: "Zdarzenia", icon: FileClock },
+    { label: "Ustawienia", icon: Settings },
+  ] },
 ];
 
 export default function OwnerAdminPanel() {
@@ -106,11 +112,15 @@ export default function OwnerAdminPanel() {
         <button className="owner-mobile-close" onClick={() => setMobileMenu(false)}><X size={22} /></button>
         <div className="owner-role"><ShieldCheck size={18} /><div><small>ROLA</small><strong>Właściciel platformy</strong></div></div>
         <nav>
-          <small>ZARZĄDZANIE</small>
-          {navItems.map((item) => {
-            const Icon = item.icon;
-            return <button key={item.label} className={section === item.label ? "active" : ""} onClick={() => { setSection(item.label); setMobileMenu(false); }}><Icon size={20} /><span>{item.label}</span>{item.label === "Biura klientów" && <b>{workspaces.length}</b>}</button>;
-          })}
+          {navGroups.map((group) => (
+            <div className="owner-nav-group" key={group.label}>
+              <small>{group.label}</small>
+              {group.items.map((item) => {
+                const Icon = item.icon;
+                return <button key={item.label} className={section === item.label ? "active" : ""} onClick={() => { setSection(item.label); setMobileMenu(false); }}><Icon size={21} /><span>{item.label}</span>{item.label === "Biura klientów" && <b>{workspaces.length}</b>}</button>;
+              })}
+            </div>
+          ))}
         </nav>
         <div className="owner-sidebar-footer"><span>Środowisko produkcyjne</span><strong>Wszystkie systemy działają</strong></div>
         <Link href="/panel"><ExternalLink size={16} /> Panel klienta</Link>
@@ -133,6 +143,12 @@ export default function OwnerAdminPanel() {
         <AnimatePresence mode="wait" initial={false}>
           <motion.div className="owner-page" key={section} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -5 }} transition={{ duration: .2 }}>
             <div className="owner-page-heading"><div><p>6 sierpnia 2026</p><h1>{section === "Pulpit" ? "Centrum zarządzania platformą" : section}</h1><span>{section === "Pulpit" ? "Kontroluj organizacje, dostęp i kondycję całej usługi." : "Zarządzaj danymi i uprawnieniami na poziomie właściciela."}</span></div><button onClick={() => setCreateOpen(true)}><Plus size={19} /> Utwórz panel klienta</button></div>
+
+            <div className="owner-context-bar">
+              <div className="context-level"><ShieldCheck size={23} /><span><small>AKTUALNY POZIOM</small><strong>Właściciel platformy</strong></span></div>
+              <div className="context-scope"><span>Dostęp do wszystkich organizacji</span><span>Pełny dziennik audytu</span><span>Tryb supervisor</span></div>
+              <button onClick={() => setSection("Zdarzenia")}><FileClock size={18} /> Otwórz dziennik</button>
+            </div>
 
             {section === "Pulpit" && (
               <>
