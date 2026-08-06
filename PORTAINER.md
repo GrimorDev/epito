@@ -36,7 +36,7 @@ W sekcji `Environment variables` dodaj wszystkie poniższe pozycje:
 | `EPITO_DB_PASSWORD` | inne unikalne losowe hasło techniczne, minimum 32 znaki |
 | `EPITO_REDIS_PASSWORD` | kolejne unikalne losowe hasło techniczne, minimum 32 znaki |
 | `EPITO_BASE_DOMAIN` | produkcyjna domena bazowa, na przykład `epito.pl` |
-| `EPITO_PORT` | port hosta, domyślnie `3000` |
+| `EPITO_PORT` | port hosta, domyślnie `8063` |
 
 Trzy hasła techniczne muszą być różne. Wygeneruj je w menedżerze haseł. Nie umieszczaj ich w repozytorium ani w pliku `.env` przesyłanym do Git.
 

@@ -52,6 +52,7 @@ test("keeps public demo and production data flows explicitly separated", async (
   assert.match(workspace, /\/api\/workspace\/overview/);
   assert.match(login, /\/api\/auth\/login/);
   assert.match(compose, /pull_policy:\s*\$\{EPITO_PULL_POLICY:-build\}/);
+  assert.match(compose, /EPITO_PORT:-8063/);
   assert.match(compose, /SUPERVISOR_PASSWORD_FILE:\s*\/run\/secrets\/supervisor_password/);
   assert.match(compose, /supervisor_password:\s*\n\s*environment:\s*EPITO_SUPERVISOR_PASSWORD/);
   assert.match(compose, /redis_password:\s*\n\s*environment:\s*EPITO_REDIS_PASSWORD/);
