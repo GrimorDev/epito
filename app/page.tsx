@@ -53,7 +53,7 @@ export default function Home() {
   return (
     <main className="site-shell">
       <header className="landing-nav">
-        <Link className="brand" href="/" aria-label="Saldo — strona główna">
+        <Link className="brand" href="/" aria-label="Saldo, strona główna">
           <span className="brand-mark" aria-hidden="true">S</span>
           <span>
             <strong>SALDO</strong>
@@ -85,7 +85,7 @@ export default function Home() {
           <div className="eyebrow"><span /> Dla nowoczesnych biur rachunkowych</div>
           <h1>Mniej pytań o podatki.<br /><em>Więcej spokoju.</em></h1>
           <p className="hero-lead">
-            Saldo przekazuje klientom kwoty VAT, PIT i ZUS, pilnuje terminów i porządkuje dokumenty — zanim rozdzwonią się telefony.
+            Saldo przekazuje klientom kwoty VAT, PIT i ZUS, pilnuje terminów i porządkuje dokumenty, zanim rozdzwonią się telefony.
           </p>
           <div className="hero-actions">
             <Link className="button button-primary" href="/panel">Zobacz panel klienta <span>→</span></Link>
@@ -122,7 +122,7 @@ export default function Home() {
               <div className="preview-row"><span className="preview-row-icon">Z</span><div><strong>ZUS za lipiec</strong><small>Termin 20 sierpnia</small></div><b>1 773,96 zł</b></div>
             </div>
           </div>
-          <div className="floating-note note-paid"><span>✓</span><div><strong>Płatność przyjęta</strong><small>VAT • 7 830,00 zł</small></div></div>
+          <div className="floating-note note-paid"><span>✓</span><div><strong>Płatność przyjęta</strong><small>VAT, 7 830,00 zł</small></div></div>
           <div className="floating-note note-time"><span>14h</span><div><strong>mniej telefonów</strong><small>miesięcznie</small></div></div>
         </div>
       </section>
@@ -147,7 +147,7 @@ export default function Home() {
             <div className="message-bubble message-left">Dzień dobry, ile mam zapłacić ZUS?</div>
             <div className="message-bubble message-right">Czy moja faktura dotarła?</div>
             <div className="message-bubble message-left">Proszę jeszcze raz wysłać numer konta 🙏</div>
-            <div className="chaos-caption"><strong>47 rozproszonych wiadomości</strong><small>WhatsApp • e-mail • SMS</small></div>
+            <div className="chaos-caption"><strong>47 rozproszonych wiadomości</strong><small>WhatsApp, e-mail i SMS</small></div>
           </div>
           <div className="transform-arrow" aria-hidden="true">→</div>
           <div className="after-card">

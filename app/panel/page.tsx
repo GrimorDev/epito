@@ -1,7 +1,39 @@
 "use client";
 
 import Link from "next/link";
-import { ChangeEvent, useState } from "react";
+import { ChangeEvent, useEffect, useState } from "react";
+import { AnimatePresence, motion } from "framer-motion";
+import {
+  ArrowLeft,
+  ArrowRight,
+  Bell,
+  Building2,
+  CalendarDays,
+  Check,
+  ChevronDown,
+  CircleHelp,
+  Clock3,
+  CreditCard,
+  FileText,
+  Filter,
+  FolderOpen,
+  Landmark,
+  LayoutDashboard,
+  Menu,
+  MessageSquareText,
+  Moon,
+  MoreHorizontal,
+  Phone,
+  ReceiptText,
+  Send,
+  Sun,
+  TrendingDown,
+  TrendingUp,
+  Upload,
+  WalletCards,
+  X,
+  type LucideIcon,
+} from "lucide-react";
 
 type Section = "Pulpit" | "Płatności" | "Dokumenty" | "Wiadomości";
 type Payment = {
@@ -14,19 +46,27 @@ type Payment = {
 };
 
 const initialPayments: Payment[] = [
-  { id: 1, type: "VAT", period: "Lipiec 2026", amount: 7830, due: "20 sierpnia 2026", status: "due" },
-  { id: 2, type: "ZUS", period: "Lipiec 2026", amount: 1773.96, due: "20 sierpnia 2026", status: "scheduled" },
-  { id: 3, type: "PIT", period: "Czerwiec 2026", amount: 2640, due: "21 lipca 2026", status: "paid" },
+  { id: 1, type: "VAT", period: "lipiec 2026", amount: 7830, due: "20 sierpnia 2026", status: "due" },
+  { id: 2, type: "ZUS", period: "lipiec 2026", amount: 1773.96, due: "20 sierpnia 2026", status: "scheduled" },
+  { id: 3, type: "PIT", period: "czerwiec 2026", amount: 2640, due: "21 lipca 2026", status: "paid" },
 ];
 
 const baseDocuments = [
-  { id: 1, name: "Faktury sprzedażowe — lipiec", meta: "28 plików • dodano 4 sierpnia", status: "Przetworzone", type: "PDF" },
-  { id: 2, name: "Wyciąg bankowy — lipiec", meta: "1 plik • dodano 3 sierpnia", status: "Przetworzone", type: "CSV" },
-  { id: 3, name: "Faktury kosztowe — lipiec", meta: "19 plików • dodano 5 sierpnia", status: "W trakcie", type: "ZIP" },
-  { id: 4, name: "Umowa leasingu", meta: "Brakuje dokumentu", status: "Do uzupełnienia", type: "!" },
+  { id: 1, name: "Faktury sprzedażowe za lipiec", meta: "28 plików, dodano 4 sierpnia", status: "Przetworzone", type: "PDF" },
+  { id: 2, name: "Wyciąg bankowy za lipiec", meta: "1 plik, dodano 3 sierpnia", status: "Przetworzone", type: "CSV" },
+  { id: 3, name: "Faktury kosztowe za lipiec", meta: "19 plików, dodano 5 sierpnia", status: "W trakcie", type: "ZIP" },
+  { id: 4, name: "Umowa leasingu", meta: "Brakuje dokumentu", status: "Do uzupełnienia", type: "BRAK" },
 ];
 
-const formatMoney = (amount: number) => new Intl.NumberFormat("pl-PL", { style: "currency", currency: "PLN" }).format(amount);
+const formatMoney = (amount: number) =>
+  new Intl.NumberFormat("pl-PL", { style: "currency", currency: "PLN" }).format(amount);
+
+const pageMotion = {
+  initial: { opacity: 0, y: 10 },
+  animate: { opacity: 1, y: 0 },
+  exit: { opacity: 0, y: -6 },
+  transition: { duration: 0.22, ease: "easeOut" as const },
+};
 
 export default function ClientPanel() {
   const [section, setSection] = useState<Section>("Pulpit");
@@ -39,8 +79,36 @@ export default function ClientPanel() {
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [mobileMenu, setMobileMenu] = useState(false);
   const [messageSent, setMessageSent] = useState(false);
+  const [darkMode, setDarkMode] = useState(false);
+
+  useEffect(() => {
+    const savedTheme = window.localStorage.getItem("saldo-theme");
+    const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+    setDarkMode(savedTheme ? savedTheme === "dark" : prefersDark);
+  }, []);
 
   const duePayments = payments.filter((payment) => payment.status !== "paid");
+  const nextPayment = duePayments[0];
+
+  const navigation: { label: Section; icon: LucideIcon; badge?: string }[] = [
+    { label: "Pulpit", icon: LayoutDashboard },
+    { label: "Płatności", icon: CreditCard, badge: String(duePayments.length) },
+    { label: "Dokumenty", icon: FileText, badge: "2" },
+    { label: "Wiadomości", icon: MessageSquareText, badge: "1" },
+  ];
+
+  function selectSection(value: Section) {
+    setSection(value);
+    setMobileMenu(false);
+  }
+
+  function toggleTheme() {
+    setDarkMode((current) => {
+      const next = !current;
+      window.localStorage.setItem("saldo-theme", next ? "dark" : "light");
+      return next;
+    });
+  }
 
   function openPayment(payment: Payment) {
     setPaymentSuccess(false);
@@ -51,7 +119,9 @@ export default function ClientPanel() {
     if (!modalPayment) return;
     setPaying(true);
     window.setTimeout(() => {
-      setPayments((current) => current.map((item) => item.id === modalPayment.id ? { ...item, status: "paid" } : item));
+      setPayments((current) =>
+        current.map((item) => (item.id === modalPayment.id ? { ...item, status: "paid" } : item)),
+      );
       setPaying(false);
       setPaymentSuccess(true);
     }, 750);
@@ -66,150 +136,263 @@ export default function ClientPanel() {
   function uploadDocument(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     if (!file) return;
-    setDocuments((items) => [{
-      id: Date.now(),
-      name: file.name,
-      meta: `${Math.max(1, Math.round(file.size / 1024))} KB • dodano teraz`,
-      status: "W trakcie",
-      type: file.name.split(".").pop()?.toUpperCase() || "PLIK",
-    }, ...items]);
+    setDocuments((items) => [
+      {
+        id: Date.now(),
+        name: file.name,
+        meta: `${Math.max(1, Math.round(file.size / 1024))} KB, dodano teraz`,
+        status: "W trakcie",
+        type: file.name.split(".").pop()?.toUpperCase() || "PLIK",
+      },
+      ...items,
+    ]);
     setSection("Dokumenty");
   }
 
-  const navigation: { label: Section; icon: string; badge?: string }[] = [
-    { label: "Pulpit", icon: "⌂" },
-    { label: "Płatności", icon: "₿", badge: String(duePayments.length) },
-    { label: "Dokumenty", icon: "□", badge: "2" },
-    { label: "Wiadomości", icon: "✉", badge: "1" },
-  ];
-
   return (
-    <main className="portal-shell">
+    <main className={darkMode ? "portal-shell theme-dark" : "portal-shell"}>
       <aside className={mobileMenu ? "portal-sidebar sidebar-open" : "portal-sidebar"}>
-        <div className="portal-brand"><span className="brand-mark">S</span><span><strong>SALDO</strong><small>Panel klienta</small></span></div>
-        <button className="sidebar-close" type="button" onClick={() => setMobileMenu(false)} aria-label="Zamknij menu">×</button>
+        <div className="portal-brand">
+          <span className="brand-mark">S</span>
+          <span><strong>SALDO</strong><small>Panel klienta</small></span>
+        </div>
+        <button className="sidebar-close" type="button" onClick={() => setMobileMenu(false)} aria-label="Zamknij menu"><X size={24} /></button>
+
         <nav className="portal-nav" aria-label="Nawigacja panelu">
-          <small>MENU</small>
-          {navigation.map((item) => (
-            <button key={item.label} className={section === item.label ? "active" : ""} onClick={() => { setSection(item.label); setMobileMenu(false); }}>
-              <span className="nav-icon">{item.icon}</span>{item.label}{item.badge && <b>{item.badge}</b>}
-            </button>
-          ))}
+          <small>GŁÓWNE MENU</small>
+          {navigation.map((item) => {
+            const Icon = item.icon;
+            return (
+              <button key={item.label} className={section === item.label ? "active" : ""} onClick={() => selectSection(item.label)}>
+                <Icon className="nav-icon" size={21} strokeWidth={1.9} />
+                <span>{item.label}</span>
+                {item.badge && <b>{item.badge}</b>}
+              </button>
+            );
+          })}
         </nav>
-        <div className="sidebar-help"><span>?</span><strong>Potrzebujesz pomocy?</strong><p>Napisz do swojego opiekuna w biurze.</p><button onClick={() => setSection("Wiadomości")}>Napisz wiadomość</button></div>
-        <Link className="back-to-site" href="/">← Wróć na stronę Saldo</Link>
+
+        <div className="sidebar-help">
+          <CircleHelp size={24} />
+          <strong>Potrzebujesz pomocy?</strong>
+          <p>Twój opiekun odpowie na pytania dotyczące rozliczeń.</p>
+          <button onClick={() => selectSection("Wiadomości")}>Napisz wiadomość</button>
+        </div>
+        <Link className="back-to-site" href="/"><ArrowLeft size={16} /> Strona Saldo</Link>
       </aside>
 
       {mobileMenu && <button className="sidebar-backdrop" aria-label="Zamknij menu" onClick={() => setMobileMenu(false)} />}
 
       <section className="portal-main">
         <header className="portal-topbar">
-          <button className="mobile-sidebar-button" onClick={() => setMobileMenu(true)} aria-label="Otwórz menu"><span /><span /><span /></button>
-          <div className="company-switcher"><span>KS</span><div><small>Firma</small><strong>Kowalski Studio sp. z o.o.</strong></div><b>⌄</b></div>
+          <button className="mobile-sidebar-button" onClick={() => setMobileMenu(true)} aria-label="Otwórz menu"><Menu size={24} /></button>
+          <button className="company-switcher" type="button">
+            <span><Building2 size={20} /></span>
+            <div><small>Aktywna firma</small><strong>Kowalski Studio sp. z o.o.</strong></div>
+            <ChevronDown size={18} />
+          </button>
+
           <div className="portal-user-actions">
+            <button className="theme-toggle" type="button" onClick={toggleTheme} aria-label={darkMode ? "Włącz tryb jasny" : "Włącz tryb ciemny"}>
+              {darkMode ? <Sun size={20} /> : <Moon size={20} />}
+              <span>{darkMode ? "Tryb jasny" : "Tryb ciemny"}</span>
+            </button>
+
             <div className="notification-wrap">
-              <button className="notification-button" onClick={() => setNotificationsOpen((value) => !value)} aria-label="Powiadomienia">♢<span>2</span></button>
-              {notificationsOpen && (
-                <div className="notification-popover">
-                  <div><strong>Powiadomienia</strong><button onClick={() => setNotificationsOpen(false)}>×</button></div>
-                  <p><span className="green">✓</span><b>Wyliczenie VAT jest gotowe</b><small>Dzisiaj, 08:42</small></p>
-                  <p><span className="yellow">!</span><b>Brakuje umowy leasingu</b><small>Wczoraj, 14:10</small></p>
-                </div>
-              )}
+              <button className="notification-button" onClick={() => setNotificationsOpen((value) => !value)} aria-label="Powiadomienia">
+                <Bell size={21} />
+                <span>2</span>
+              </button>
+              <AnimatePresence>
+                {notificationsOpen && (
+                  <motion.div className="notification-popover" initial={{ opacity: 0, y: 8, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 6, scale: 0.98 }} transition={{ duration: 0.18 }}>
+                    <div><strong>Powiadomienia</strong><button onClick={() => setNotificationsOpen(false)} aria-label="Zamknij"><X size={20} /></button></div>
+                    <p><span className="notification-icon success"><Check size={15} /></span><b>Wyliczenie VAT jest gotowe</b><small>Dzisiaj, 08:42</small></p>
+                    <p><span className="notification-icon warning"><FileText size={15} /></span><b>Brakuje umowy leasingu</b><small>Wczoraj, 14:10</small></p>
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </div>
-            <div className="user-profile"><span>MK</span><div><strong>Marcin Kowalski</strong><small>Administrator</small></div><b>⌄</b></div>
+
+            <button className="user-profile" type="button">
+              <span>MK</span>
+              <div><strong>Marcin Kowalski</strong><small>Administrator</small></div>
+              <ChevronDown size={18} />
+            </button>
           </div>
         </header>
 
         <div className="portal-page">
-          {section === "Pulpit" && (
-            <>
-              <div className="page-heading"><div><p>Czwartek, 6 sierpnia</p><h1>Dzień dobry, Marcin!</h1><span>Oto najważniejsze informacje o Twojej firmie.</span></div><label className="upload-button">+ Dodaj dokument<input type="file" onChange={uploadDocument} /></label></div>
+          <AnimatePresence mode="wait" initial={false}>
+            <motion.div className="portal-view" key={section} {...pageMotion}>
+              {section === "Pulpit" && (
+                <>
+                  <div className="page-heading">
+                    <div><p>Czwartek, 6 sierpnia</p><h1>Dzień dobry, Marcin</h1><span>Najważniejsze informacje o Twojej firmie są tutaj.</span></div>
+                    <label className="upload-button"><Upload size={18} /> Dodaj dokument<input type="file" onChange={uploadDocument} /></label>
+                  </div>
 
-              <section className="payment-hero-card">
-                <div className="payment-hero-info"><div className="due-icon">₿</div><div><span>NAJBLIŻSZA PŁATNOŚĆ</span><h2>{duePayments[0] ? `${duePayments[0].type} za ${duePayments[0].period.toLowerCase()}` : "Wszystko opłacone"}</h2><p>{duePayments[0] ? <>Termin płatności: <strong>{duePayments[0].due}</strong></> : "Nie masz żadnych zaległych zobowiązań."}</p></div></div>
-                {duePayments[0] ? <><div className="payment-hero-amount"><span>DO ZAPŁATY</span><strong>{formatMoney(duePayments[0].amount)}</strong></div><button className="button button-primary pay-button" onClick={() => openPayment(duePayments[0])}>Zapłać teraz <span>→</span></button><div className="deadline-pill"><strong>14</strong><span>dni<br />do terminu</span></div></> : <div className="all-paid-badge">✓ Rozliczone</div>}
-              </section>
+                  <section className="payment-hero-card">
+                    <div className="payment-hero-info">
+                      <div className="due-icon"><Landmark size={29} /></div>
+                      <div><span>NAJBLIŻSZA PŁATNOŚĆ</span><h2>{nextPayment ? `${nextPayment.type} za ${nextPayment.period}` : "Wszystko opłacone"}</h2><p>{nextPayment ? <>Termin płatności <strong>{nextPayment.due}</strong></> : "Nie masz zaległych zobowiązań."}</p></div>
+                    </div>
+                    {nextPayment ? (
+                      <>
+                        <div className="payment-hero-amount"><span>DO ZAPŁATY</span><strong>{formatMoney(nextPayment.amount)}</strong></div>
+                        <button className="button button-primary pay-button" onClick={() => openPayment(nextPayment)}>Zapłać teraz <ArrowRight size={19} /></button>
+                        <div className="deadline-pill"><CalendarDays size={23} /><span><strong>14 dni</strong> do terminu</span></div>
+                      </>
+                    ) : <div className="all-paid-badge"><Check size={18} /> Rozliczone</div>}
+                  </section>
 
-              <section className="summary-grid">
-                <article><div className="summary-title"><span className="summary-icon mint">□</span><p><small>DOKUMENTY — LIPIEC</small><strong>48 z 50</strong></p><b className="trend-up">↗ 12%</b></div><div className="progress"><i style={{ width: "96%" }} /></div><p className="summary-note"><span className="yellow-dot" /> Brakuje 2 dokumentów</p></article>
-                <article><div className="summary-title"><span className="summary-icon blue-bg">✓</span><p><small>STATUS KSIĘGOWANIA</small><strong>W toku</strong></p><b className="status-pill-blue">72%</b></div><div className="progress blue-progress"><i style={{ width: "72%" }} /></div><p className="summary-note muted">Przewidywane zakończenie: 12 sierpnia</p></article>
-                <article><div className="summary-title"><span className="summary-icon lilac">↗</span><p><small>KOSZTY — LIPIEC</small><strong>21 480 zł</strong></p><b className="trend-down">↘ 8%</b></div><div className="mini-bars" aria-hidden="true"><i /><i /><i /><i /><i /><i /><i /></div><p className="summary-note muted">w porównaniu z czerwcem</p></article>
-              </section>
+                  <section className="summary-grid">
+                    <article>
+                      <div className="summary-title"><span className="summary-icon mint"><FolderOpen size={21} /></span><p><small>DOKUMENTY ZA LIPIEC</small><strong>48 z 50</strong></p><b className="trend-up"><TrendingUp size={14} /> 12%</b></div>
+                      <div className="progress"><i style={{ width: "96%" }} /></div>
+                      <p className="summary-note warning-text">Brakuje 2 dokumentów</p>
+                    </article>
+                    <article>
+                      <div className="summary-title"><span className="summary-icon blue-bg"><Check size={21} /></span><p><small>STATUS KSIĘGOWANIA</small><strong>W toku</strong></p><b className="status-pill-blue">72%</b></div>
+                      <div className="progress blue-progress"><i style={{ width: "72%" }} /></div>
+                      <p className="summary-note muted">Przewidywane zakończenie 12 sierpnia</p>
+                    </article>
+                    <article>
+                      <div className="summary-title"><span className="summary-icon lilac"><WalletCards size={21} /></span><p><small>KOSZTY ZA LIPIEC</small><strong>21 480 zł</strong></p><b className="trend-down"><TrendingDown size={14} /> 8%</b></div>
+                      <div className="mini-bars" aria-hidden="true"><i /><i /><i /><i /><i /><i /><i /></div>
+                      <p className="summary-note muted">W porównaniu z czerwcem</p>
+                    </article>
+                  </section>
 
-              <section className="portal-two-columns">
-                <article className="panel-card">
-                  <div className="panel-card-heading"><div><h3>Nadchodzące płatności</h3><p>Twoje zobowiązania na najbliższe 30 dni.</p></div><button onClick={() => setSection("Płatności")}>Zobacz wszystkie →</button></div>
-                  <div className="payment-list">
-                    {payments.slice(0, 3).map((payment) => (
-                      <div className="payment-list-row" key={payment.id}>
-                        <span className={`payment-type ${payment.type.toLowerCase()}`}>{payment.type.slice(0, 1)}</span>
-                        <div><strong>{payment.type}</strong><small>{payment.period}</small></div>
-                        <div className="list-due"><small>Termin</small><strong>{payment.due.replace(" 2026", "")}</strong></div>
-                        <strong className="list-amount">{formatMoney(payment.amount)}</strong>
-                        {payment.status === "paid" ? <span className="paid-pill">✓ Opłacone</span> : <button className="small-pay" onClick={() => openPayment(payment)}>Zapłać</button>}
+                  <section className="portal-two-columns">
+                    <article className="panel-card">
+                      <div className="panel-card-heading"><div><h3>Nadchodzące płatności</h3><p>Zobowiązania na najbliższe 30 dni.</p></div><button onClick={() => selectSection("Płatności")}>Wszystkie <ArrowRight size={16} /></button></div>
+                      <div className="payment-list">
+                        {payments.map((payment) => (
+                          <div className="payment-list-row" key={payment.id}>
+                            <span className={`payment-type ${payment.type.toLowerCase()}`}>{payment.type}</span>
+                            <div><strong>{payment.type}</strong><small>{payment.period}</small></div>
+                            <div className="list-due"><small>Termin</small><strong>{payment.due.replace(" 2026", "")}</strong></div>
+                            <strong className="list-amount">{formatMoney(payment.amount)}</strong>
+                            {payment.status === "paid" ? <span className="paid-pill"><Check size={13} /> Opłacone</span> : <button className="small-pay" onClick={() => openPayment(payment)}>Zapłać</button>}
+                          </div>
+                        ))}
                       </div>
-                    ))}
+                    </article>
+
+                    <article className="panel-card">
+                      <div className="panel-card-heading"><div><h3>Ostatnie dokumenty</h3><p>Najnowsza aktywność.</p></div><button onClick={() => selectSection("Dokumenty")}>Wszystkie <ArrowRight size={16} /></button></div>
+                      <div className="document-mini-list">
+                        {documents.slice(0, 3).map((document) => (
+                          <div key={document.id}><span>{document.type}</span><div><strong>{document.name}</strong><small>{document.meta}</small></div><b className={document.status === "Przetworzone" ? "done" : "pending"}>{document.status}</b></div>
+                        ))}
+                      </div>
+                    </article>
+                  </section>
+
+                  <section className="advisor-banner">
+                    <div className="advisor-avatar">AK</div>
+                    <div><small>TWÓJ OPIEKUN</small><h3>Anna Kowalska <span className="availability">Dostępna</span></h3><p>Poniedziałek do piątku, od 8:00 do 16:00.</p></div>
+                    <button onClick={() => selectSection("Wiadomości")}><MessageSquareText size={17} /> Napisz wiadomość</button>
+                    <div className="advisor-phone"><small>TELEFON</small><strong><Phone size={14} /> +48 22 123 45 67</strong></div>
+                  </section>
+                </>
+              )}
+
+              {section === "Płatności" && (
+                <section className="subpage">
+                  <div className="page-heading"><div><p>Rozliczenia</p><h1>Płatności</h1><span>Kwoty przygotowane przez Twoje biuro rachunkowe.</span></div></div>
+                  <div className="subpage-summary">
+                    <article><small>DO ZAPŁATY</small><strong>{formatMoney(duePayments.reduce((sum, item) => sum + item.amount, 0))}</strong><span>{duePayments.length} zobowiązania</span></article>
+                    <article><small>OPŁACONE W TYM ROKU</small><strong>68 420,00 zł</strong><span>12 płatności</span></article>
+                    <article><small>NAJBLIŻSZY TERMIN</small><strong>20 sierpnia</strong><span>Za 14 dni</span></article>
                   </div>
-                </article>
-
-                <article className="panel-card">
-                  <div className="panel-card-heading"><div><h3>Ostatnie dokumenty</h3><p>Najnowsza aktywność w dokumentach.</p></div><button onClick={() => setSection("Dokumenty")}>Wszystkie →</button></div>
-                  <div className="document-mini-list">
-                    {documents.slice(0, 3).map((document) => (
-                      <div key={document.id}><span>{document.type}</span><div><strong>{document.name}</strong><small>{document.meta}</small></div><b className={document.status === "Przetworzone" ? "done" : "pending"}>{document.status}</b></div>
-                    ))}
+                  <div className="panel-card payments-table-card">
+                    <div className="panel-card-heading"><div><h3>Historia płatności</h3><p>To demo. Żaden rachunek nie zostanie obciążony.</p></div></div>
+                    <div className="full-payment-list">
+                      {payments.map((payment) => (
+                        <div key={payment.id}>
+                          <span className={`payment-type ${payment.type.toLowerCase()}`}>{payment.type}</span>
+                          <div><strong>{payment.type}, {payment.period}</strong><small>Termin {payment.due}</small></div>
+                          <strong>{formatMoney(payment.amount)}</strong>
+                          <span className={payment.status === "paid" ? "paid-pill" : payment.status === "scheduled" ? "scheduled-pill" : "due-pill"}>{payment.status === "paid" ? "Opłacone" : payment.status === "scheduled" ? "Zaplanowane" : "Do zapłaty"}</span>
+                          {payment.status !== "paid" && <button className="small-pay" onClick={() => openPayment(payment)}>Zapłać <ArrowRight size={14} /></button>}
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                </article>
-              </section>
+                </section>
+              )}
 
-              <section className="advisor-banner"><div className="advisor-avatar">AK<span>●</span></div><div><small>TWÓJ OPIEKUN</small><h3>Anna Kowalska</h3><p>Masz pytanie? Jestem dostępna od poniedziałku do piątku, 8:00–16:00.</p></div><button onClick={() => setSection("Wiadomości")}>✉ Napisz wiadomość</button><div className="advisor-phone"><small>TELEFON</small><strong>+48 22 123 45 67</strong></div></section>
-            </>
-          )}
+              {section === "Dokumenty" && (
+                <section className="subpage">
+                  <div className="page-heading"><div><p>Bezpieczne archiwum</p><h1>Dokumenty</h1><span>Przekazuj pliki i sprawdzaj ich status.</span></div><label className="upload-button"><Upload size={18} /> Dodaj dokument<input type="file" onChange={uploadDocument} /></label></div>
+                  <label className="drop-zone"><input type="file" onChange={uploadDocument} /><Upload size={27} /><strong>Przeciągnij plik lub kliknij, aby go dodać</strong><small>PDF, JPG, PNG, CSV lub ZIP, maksymalnie 20 MB</small></label>
+                  <div className="panel-card documents-card">
+                    <div className="panel-card-heading"><div><h3>Dokumenty firmy</h3><p>{documents.length} pozycji</p></div><button><Filter size={16} /> Filtruj</button></div>
+                    <div className="documents-table">
+                      {documents.map((document) => (
+                        <div key={document.id}>
+                          <span className={document.type === "BRAK" ? "file-icon alert" : "file-icon"}>{document.type}</span>
+                          <div><strong>{document.name}</strong><small>{document.meta}</small></div>
+                          <span className={document.status === "Przetworzone" ? "doc-status done" : document.status === "Do uzupełnienia" ? "doc-status missing" : "doc-status pending"}>{document.status}</span>
+                          <button aria-label={`Więcej opcji dla ${document.name}`}><MoreHorizontal size={20} /></button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </section>
+              )}
 
-          {section === "Płatności" && (
-            <section className="subpage">
-              <div className="page-heading"><div><p>Rozliczenia</p><h1>Płatności</h1><span>Kwoty przygotowane przez Twoje biuro rachunkowe.</span></div></div>
-              <div className="subpage-summary"><article><small>DO ZAPŁATY</small><strong>{formatMoney(duePayments.reduce((sum, item) => sum + item.amount, 0))}</strong><span>{duePayments.length} zobowiązania</span></article><article><small>OPŁACONE W TYM ROKU</small><strong>68 420,00 zł</strong><span>12 płatności</span></article><article><small>NAJBLIŻSZY TERMIN</small><strong>20 sierpnia</strong><span>za 14 dni</span></article></div>
-              <div className="panel-card payments-table-card"><div className="panel-card-heading"><div><h3>Historia i nadchodzące płatności</h3><p>Dane demonstracyjne — płatność nie obciąży rachunku.</p></div></div><div className="full-payment-list">{payments.map((payment) => <div key={payment.id}><span className={`payment-type ${payment.type.toLowerCase()}`}>{payment.type[0]}</span><div><strong>{payment.type} — {payment.period}</strong><small>Termin: {payment.due}</small></div><strong>{formatMoney(payment.amount)}</strong><span className={payment.status === "paid" ? "paid-pill" : payment.status === "scheduled" ? "scheduled-pill" : "due-pill"}>{payment.status === "paid" ? "✓ Opłacone" : payment.status === "scheduled" ? "◷ Zaplanowane" : "Do zapłaty"}</span>{payment.status !== "paid" && <button className="small-pay" onClick={() => openPayment(payment)}>Zapłać →</button>}</div>)}</div></div>
-            </section>
-          )}
-
-          {section === "Dokumenty" && (
-            <section className="subpage">
-              <div className="page-heading"><div><p>Bezpieczne archiwum</p><h1>Dokumenty</h1><span>Przekazuj pliki i śledź ich status.</span></div><label className="upload-button">+ Dodaj dokument<input type="file" onChange={uploadDocument} /></label></div>
-              <label className="drop-zone"><input type="file" onChange={uploadDocument} /><span>↑</span><strong>Przeciągnij plik lub kliknij, aby dodać</strong><small>PDF, JPG, PNG, CSV lub ZIP • maks. 20 MB</small></label>
-              <div className="panel-card documents-card"><div className="panel-card-heading"><div><h3>Dokumenty firmy</h3><p>{documents.length} pozycji</p></div><button>Filtruj ⌄</button></div><div className="documents-table">{documents.map((document) => <div key={document.id}><span className={document.type === "!" ? "file-icon alert" : "file-icon"}>{document.type}</span><div><strong>{document.name}</strong><small>{document.meta}</small></div><span className={document.status === "Przetworzone" ? "doc-status done" : document.status === "Do uzupełnienia" ? "doc-status missing" : "doc-status pending"}>{document.status}</span><button aria-label={`Więcej opcji dla ${document.name}`}>•••</button></div>)}</div></div>
-            </section>
-          )}
-
-          {section === "Wiadomości" && (
-            <section className="subpage messages-page">
-              <div className="page-heading"><div><p>Kontakt z biurem</p><h1>Wiadomości</h1><span>Wszystkie ustalenia w jednym wątku.</span></div></div>
-              <div className="messages-layout"><aside><button className="active"><span className="advisor-avatar small">AK</span><div><strong>Anna Kowalska</strong><small>Brakujący dokument</small></div><b>1</b></button></aside><article className="chat-card"><header><span className="advisor-avatar small">AK</span><div><strong>Anna Kowalska</strong><small><i /> Dostępna</small></div></header><div className="chat-body"><div className="chat-time">WCZORAJ</div><div className="chat-message incoming"><p>Dzień dobry, brakuje nam umowy leasingu do zamknięcia lipca. Czy może Pan dodać ją w zakładce Dokumenty?</p><small>14:10</small></div><div className="chat-message outgoing"><p>Dzień dobry, jasne — dodam dokument jeszcze dzisiaj.</p><small>14:24 ✓✓</small></div>{messageSent && <div className="chat-message outgoing"><p>Dziękuję, dokument został już dodany.</p><small>teraz ✓</small></div>}</div><footer><input aria-label="Treść wiadomości" placeholder="Napisz wiadomość…" /><button onClick={() => setMessageSent(true)}>Wyślij →</button></footer></article></div>
-            </section>
-          )}
+              {section === "Wiadomości" && (
+                <section className="subpage messages-page">
+                  <div className="page-heading"><div><p>Kontakt z biurem</p><h1>Wiadomości</h1><span>Wszystkie ustalenia w jednym miejscu.</span></div></div>
+                  <div className="messages-layout">
+                    <aside><button className="active"><span className="advisor-avatar small">AK</span><div><strong>Anna Kowalska</strong><small>Brakujący dokument</small></div><b>1</b></button></aside>
+                    <article className="chat-card">
+                      <header><span className="advisor-avatar small">AK</span><div><strong>Anna Kowalska</strong><small>Dostępna</small></div></header>
+                      <div className="chat-body">
+                        <div className="chat-time">WCZORAJ</div>
+                        <div className="chat-message incoming"><p>Dzień dobry, brakuje nam umowy leasingu do zamknięcia lipca. Czy może Pan dodać ją w zakładce Dokumenty?</p><small>14:10</small></div>
+                        <div className="chat-message outgoing"><p>Dzień dobry, jasne. Dodam dokument jeszcze dzisiaj.</p><small>14:24</small></div>
+                        {messageSent && <motion.div className="chat-message outgoing" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}><p>Dziękuję, dokument został już dodany.</p><small>Teraz</small></motion.div>}
+                      </div>
+                      <footer><input aria-label="Treść wiadomości" placeholder="Napisz wiadomość" /><button onClick={() => setMessageSent(true)}>Wyślij <Send size={16} /></button></footer>
+                    </article>
+                  </div>
+                </section>
+              )}
+            </motion.div>
+          </AnimatePresence>
         </div>
       </section>
 
-      {modalPayment && (
-        <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="Płatność demonstracyjna">
-          <div className="payment-modal">
-            <button className="modal-close" onClick={closeModal} aria-label="Zamknij">×</button>
-            {paymentSuccess ? (
-              <div className="payment-success"><span>✓</span><h2>Płatność przyjęta</h2><p>Status zobowiązania został zaktualizowany. To demonstracja — żadne środki nie zostały pobrane.</p><button className="button button-dark button-wide" onClick={closeModal}>Wróć do panelu</button></div>
-            ) : (
-              <>
-                <span className="modal-kicker">PŁATNOŚĆ DEMONSTRACYJNA</span><h2>{modalPayment.type} — {modalPayment.period}</h2><div className="modal-amount"><small>Kwota do zapłaty</small><strong>{formatMoney(modalPayment.amount)}</strong><span>Termin: {modalPayment.due}</span></div>
-                <fieldset><legend>Wybierz metodę</legend><label className={paymentMethod === "blik" ? "selected" : ""}><input type="radio" name="method" value="blik" checked={paymentMethod === "blik"} onChange={() => setPaymentMethod("blik")} /><b>BLIK</b><span>Kod 6-cyfrowy</span></label><label className={paymentMethod === "transfer" ? "selected" : ""}><input type="radio" name="method" value="transfer" checked={paymentMethod === "transfer"} onChange={() => setPaymentMethod("transfer")} /><b>↗</b><span>Szybki przelew</span></label></fieldset>
-                {paymentMethod === "blik" && <label className="blik-field">Kod BLIK<input inputMode="numeric" maxLength={6} placeholder="• • • • • •" /></label>}
-                <div className="demo-notice">ⓘ To jest interaktywny prototyp. Kliknięcie nie uruchamia prawdziwej płatności.</div>
-                <button className="button button-primary button-wide modal-pay" onClick={confirmPayment} disabled={paying}>{paying ? "Przetwarzanie…" : `Potwierdź ${formatMoney(modalPayment.amount)}`} <span>→</span></button>
-              </>
-            )}
-          </div>
-        </div>
-      )}
+      <AnimatePresence>
+        {modalPayment && (
+          <motion.div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="Płatność demonstracyjna" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+            <motion.div className="payment-modal" initial={{ opacity: 0, scale: 0.96, y: 16 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.97, y: 10 }} transition={{ duration: 0.2 }}>
+              <button className="modal-close" onClick={closeModal} aria-label="Zamknij"><X size={24} /></button>
+              {paymentSuccess ? (
+                <div className="payment-success"><span><Check size={30} /></span><h2>Płatność przyjęta</h2><p>Status został zaktualizowany. To demonstracja, więc żadne środki nie zostały pobrane.</p><button className="button button-dark button-wide" onClick={closeModal}>Wróć do panelu</button></div>
+              ) : (
+                <>
+                  <span className="modal-kicker">PŁATNOŚĆ DEMONSTRACYJNA</span>
+                  <h2>{modalPayment.type}, {modalPayment.period}</h2>
+                  <div className="modal-amount"><small>Kwota do zapłaty</small><strong>{formatMoney(modalPayment.amount)}</strong><span>Termin {modalPayment.due}</span></div>
+                  <fieldset>
+                    <legend>Wybierz metodę</legend>
+                    <label className={paymentMethod === "blik" ? "selected" : ""}><input type="radio" name="method" value="blik" checked={paymentMethod === "blik"} onChange={() => setPaymentMethod("blik")} /><b>BLIK</b><span>Kod 6-cyfrowy</span></label>
+                    <label className={paymentMethod === "transfer" ? "selected" : ""}><input type="radio" name="method" value="transfer" checked={paymentMethod === "transfer"} onChange={() => setPaymentMethod("transfer")} /><b><Landmark size={18} /></b><span>Szybki przelew</span></label>
+                  </fieldset>
+                  {paymentMethod === "blik" && <label className="blik-field">Kod BLIK<input inputMode="numeric" maxLength={6} placeholder="Wpisz 6 cyfr" /></label>}
+                  <div className="demo-notice"><CircleHelp size={17} /> To jest interaktywny prototyp. Kliknięcie nie uruchamia prawdziwej płatności.</div>
+                  <button className="button button-primary button-wide modal-pay" onClick={confirmPayment} disabled={paying}>{paying ? "Przetwarzanie" : `Potwierdź ${formatMoney(modalPayment.amount)}`} <ArrowRight size={18} /></button>
+                </>
+              )}
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </main>
   );
 }
