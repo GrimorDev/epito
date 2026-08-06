@@ -53,9 +53,11 @@ test("keeps public demo and production data flows explicitly separated", async (
   assert.match(login, /\/api\/auth\/login/);
   assert.match(compose, /pull_policy:\s*\$\{EPITO_PULL_POLICY:-build\}/);
   assert.match(compose, /SUPERVISOR_PASSWORD_FILE:\s*\/run\/secrets\/supervisor_password/);
+  assert.match(compose, /supervisor_password:\s*\n\s*environment:\s*EPITO_SUPERVISOR_PASSWORD/);
+  assert.match(compose, /redis_password:\s*\n\s*environment:\s*EPITO_REDIS_PASSWORD/);
   assert.match(migration, /create table user_credentials/);
   assert.match(migration, /epito_create_tenant_with_owner/);
   assert.match(migration, /app_is_supervisor/);
   assert.doesNotMatch(compose, /EPITO_SUPERVISOR_EMAIL:\s*[^$\n]+@gmail\.com/i);
-  assert.doesNotMatch(compose, /^[ \t]*SUPERVISOR_PASSWORD:/m);
+  assert.doesNotMatch(compose, /^[ \t]*SUPERVISOR_PASSWORD:\s*[^$\n]+/m);
 });

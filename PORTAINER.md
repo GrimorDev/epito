@@ -1,6 +1,6 @@
 # Wdrożenie Epito w Portainerze
 
-Domyślny stack buduje aplikację bezpośrednio z repozytorium. Nie pobiera prywatnego obrazu `ghcr.io/grimordev/epito:latest`, dlatego nie występuje błąd `denied` podczas odczytu manifestu GHCR.
+Domyślny stack jest przygotowany dla Docker Standalone i można go skonfigurować w całości z panelu Portainera. Nie wymaga tworzenia plików przez SSH i nie pobiera prywatnego obrazu `ghcr.io/grimordev/epito:latest`.
 
 Stack uruchamia:
 
@@ -11,66 +11,38 @@ Stack uruchamia:
 
 PostgreSQL i Redis nie publikują portów na hoście. Są dostępne tylko w izolowanej sieci `backend-internal`.
 
-## 1. Przygotuj cztery sekrety
-
-Na tym samym hoście, na którym działa Docker Engine wybrany jako środowisko w Portainerze, utwórz trzy losowe hasła techniczne oraz osobny plik z wybranym hasłem supervisora. Nie twórz ich wyłącznie wewnątrz kontenera Portainera:
-
-```bash
-sudo install -d -m 700 /opt/epito/secrets
-umask 077
-openssl rand -base64 48 | sudo tee /opt/epito/secrets/postgres_admin_password >/dev/null
-openssl rand -base64 48 | sudo tee /opt/epito/secrets/db_password >/dev/null
-openssl rand -base64 48 | sudo tee /opt/epito/secrets/redis_password >/dev/null
-sudo sh -c 'read -rsp "Hasło supervisora: " value; printf "%s" "$value" > /opt/epito/secrets/supervisor_password; echo'
-sudo chmod 644 /opt/epito/secrets/*
-sudo test -s /opt/epito/secrets/postgres_admin_password
-sudo test -s /opt/epito/secrets/db_password
-sudo test -s /opt/epito/secrets/redis_password
-sudo test -s /opt/epito/secrets/supervisor_password
-```
-
-Hasła nie trafiają do Compose, repozytorium ani zmiennych środowiskowych. `supervisor_password` powinien mieć co najmniej 12 znaków, literę i cyfrę. Katalog pozostaje dostępny wyłącznie dla `root` dzięki trybowi `700`. Same pliki mają tryb `644`, ponieważ Docker Compose montuje sekrety plikowe jako bind mount i nie może zmienić ich UID, GID ani trybu; aplikacja i Redis działają w kontenerach bez uprawnień roota i muszą móc je odczytać.
-
-Jeżeli sam Portainer działa w kontenerze, katalog z sekretami musi być widoczny wewnątrz tego kontenera pod tą samą ścieżką. Do konfiguracji kontenera Portainera dodaj bind mount:
-
-```text
-/opt/epito/secrets:/opt/epito/secrets:ro
-```
-
-W poleceniu `docker run` odpowiada temu:
-
-```bash
--v /opt/epito/secrets:/opt/epito/secrets:ro
-```
-
-Bez tego Portainer nie odczyta plików wskazanych w sekcji `secrets.file`, nawet jeśli istnieją one na hoście. Po dodaniu montowania odtwórz wyłącznie kontener Portainera z zachowaniem jego wolumenu `portainer_data`.
-
-## 2. Dodaj stack z prywatnego repozytorium
+## 1. Dodaj stack z prywatnego repozytorium
 
 W Portainerze wybierz:
 
 1. `Stacks` → `Add stack`.
-2. Metodę `Repository`, nie `Web editor`.
+2. Metodę `Repository`.
 3. Adres `https://github.com/GrimorDev/epito.git`.
 4. Uwierzytelnienie GitHub do odczytu prywatnego repozytorium.
 5. Gałąź `refs/heads/main`.
 6. Compose path `docker-compose.yml`.
 
-Portainer musi klonować repozytorium, ponieważ kontekst `build: .` zawiera kod aplikacji i Dockerfile.
+Portainer klonuje repozytorium, a następnie buduje aplikację z Dockerfile. Ten wariant jest przeznaczony dla lokalnego środowiska Docker Standalone, na przykład Portainera podłączonego do `/var/run/docker.sock` na tym samym serwerze. Portainer nie obsługuje kroków `build:` dla zdalnych środowisk Docker. W takim układzie trzeba użyć zewnętrznie zbudowanego obrazu i skonfigurować rejestr GHCR z tokenem `read:packages`.
 
-Ten wariant jest przeznaczony dla lokalnego środowiska Docker Standalone, na przykład Portainera podłączonego do `/var/run/docker.sock` na tym samym serwerze. Portainer nie obsługuje obecnie kroków `build:` dla zdalnych środowisk Docker. W takim układzie trzeba użyć zewnętrznie zbudowanego obrazu i skonfigurować w Portainerze rejestr GHCR z tokenem `read:packages`.
+## 2. Dodaj zmienne w Portainerze
 
-## 3. Ustaw zmienne stacka
-
-W sekcji `Environment variables` ustaw co najmniej:
+W sekcji `Environment variables` dodaj wszystkie poniższe pozycje:
 
 | Zmienna | Wartość |
 | --- | --- |
 | `EPITO_SUPERVISOR_EMAIL` | adres e-mail właściciela platformy |
+| `EPITO_SUPERVISOR_PASSWORD` | wybrane silne hasło supervisora |
+| `EPITO_POSTGRES_ADMIN_PASSWORD` | unikalne losowe hasło techniczne, minimum 32 znaki |
+| `EPITO_DB_PASSWORD` | inne unikalne losowe hasło techniczne, minimum 32 znaki |
+| `EPITO_REDIS_PASSWORD` | kolejne unikalne losowe hasło techniczne, minimum 32 znaki |
 | `EPITO_BASE_DOMAIN` | produkcyjna domena bazowa, na przykład `epito.pl` |
 | `EPITO_PORT` | port hosta, domyślnie `3000` |
 
-Pozostałe wartości mają bezpieczne ustawienia domyślne:
+Trzy hasła techniczne muszą być różne. Wygeneruj je w menedżerze haseł. Nie umieszczaj ich w repozytorium ani w pliku `.env` przesyłanym do Git.
+
+Compose pobiera cztery hasła z konfiguracji Portainera i udostępnia je kontenerom jako pliki w `/run/secrets`. Hasła nie trafiają do zmiennych środowiskowych uruchomionych usług i nie pojawiają się w `docker inspect` kontenerów. Pozostają jednak dostępne administratorom Portainera, dlatego dostęp do stacka powinien być ograniczony do administratorów.
+
+Pozostałe ustawienia mają bezpieczne wartości domyślne:
 
 | Zmienna | Domyślna wartość |
 | --- | --- |
@@ -79,14 +51,10 @@ Pozostałe wartości mają bezpieczne ustawienia domyślne:
 | `EPITO_DATABASE_NAME` | `epito_prod` |
 | `EPITO_NETWORK` | `epito` |
 | `EPITO_BACKEND_NETWORK` | `epito-backend-internal` |
-| `EPITO_POSTGRES_ADMIN_PASSWORD_FILE` | `/opt/epito/secrets/postgres_admin_password` |
-| `EPITO_DB_PASSWORD_FILE` | `/opt/epito/secrets/db_password` |
-| `EPITO_REDIS_PASSWORD_FILE` | `/opt/epito/secrets/redis_password` |
-| `EPITO_SUPERVISOR_PASSWORD_FILE` | `/opt/epito/secrets/supervisor_password` |
 
 Nie ustawiaj `EPITO_IMAGE` na adres GHCR, dopóki rejestr i uprawnienie `read:packages` nie są poprawnie skonfigurowane.
 
-## 4. Uruchom i sprawdź
+## 3. Uruchom i sprawdź
 
 Kliknij `Deploy the stack`. Pierwszy build może potrwać kilka minut. Kolejność startu jest kontrolowana przez healthchecki:
 
@@ -102,21 +70,21 @@ https://twoja-domena.pl/api/health
 https://twoja-domena.pl/logowanie
 ```
 
-Logowanie supervisora używa e-maila ze zmiennej `EPITO_SUPERVISOR_EMAIL` i hasła z pliku `supervisor_password`. Po zalogowaniu można tworzyć rzeczywiste organizacje oraz pierwsze konta ich właścicieli. Właściciel organizacji może następnie tworzyć klientów i pracowników.
+Logowanie supervisora używa wartości `EPITO_SUPERVISOR_EMAIL` i `EPITO_SUPERVISOR_PASSWORD`. Po zalogowaniu można tworzyć rzeczywiste organizacje oraz pierwsze konta ich właścicieli. Właściciel organizacji może następnie tworzyć klientów i pracowników.
 
 Publiczne `/panel` oraz `/admin` pozostają demonstracją i nie zapisują przykładowych danych do PostgreSQL. Produkcyjne dane są dostępne tylko po logowaniu pod `/workspace` i `/supervisor`.
 
-## 5. Domena i adresy organizacji
+## 4. Domena i adresy organizacji
 
 Reverse proxy, na przykład Traefik, Nginx Proxy Manager lub Caddy, powinno przekazywać ruch do `http://epito:3000` i ustawiać nagłówki `Host`, `X-Forwarded-Host` oraz `X-Forwarded-Proto`.
 
 Dla adresów w formacie `klient.epito.pl` dodaj certyfikat wildcard `*.epito.pl` oraz wildcard DNS kierujący na serwer. `EPITO_BASE_DOMAIN` służy do prezentowania właściwych adresów w panelu supervisora.
 
-## 6. RLS i wielofirmowość
+## 5. RLS i wielofirmowość
 
 Operacje organizacji działają w transakcji ustawiającej `app.current_tenant_id` i `app.current_user_id`. Polityki PostgreSQL blokują odczyt oraz zapis między organizacjami. Rola `epito_app` nie jest superużytkownikiem, właścicielem tabel ani rolą `BYPASSRLS`. Kontrolowane operacje supervisora są audytowane.
 
-## 7. Kopie zapasowe
+## 6. Kopie zapasowe
 
 Przykładowy backup PostgreSQL:
 
@@ -126,13 +94,13 @@ docker exec epito-postgres sh -c 'PGPASSWORD="$(cat /run/secrets/postgres_admin_
 
 Przechowuj kopie poza VPS-em i regularnie testuj odtwarzanie. Wolumen nie jest kopią zapasową.
 
-## 8. Aktualizacja
+## 7. Aktualizacja
 
 W stacku opartym na repozytorium użyj `Pull and redeploy`. Portainer pobierze nowy commit i przebuduje obraz lokalnie. Migrator pomija zastosowane migracje i zatrzymuje wdrożenie, jeżeli historyczny plik migracji został zmieniony.
 
-## Lokalny build
+## Lokalny build poza Portainerem
 
-Utwórz cztery pliki w `secrets/`, ustaw `EPITO_SUPERVISOR_EMAIL` i uruchom:
+Lokalny plik `docker-compose.local.yml` nadal używa plików z katalogu `secrets/`. Ustaw `EPITO_SUPERVISOR_EMAIL`, utwórz cztery pliki zgodnie z `secrets/README.md` i uruchom:
 
 ```bash
 docker compose -f docker-compose.local.yml up -d --build
