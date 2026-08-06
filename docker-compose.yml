@@ -4,6 +4,7 @@ x-epito-build: &epito-build
   build:
     context: .
     dockerfile: Dockerfile
+    target: runner
   image: ${EPITO_IMAGE:-epito:server}
   pull_policy: ${EPITO_PULL_POLICY:-build}
 

@@ -63,3 +63,7 @@ RUN npm prune --omit=dev && chown -R nextjs:nodejs /app
 USER nextjs
 
 CMD ["node", "scripts/document-worker.mjs"]
+
+# Keep the web application as the default result of `docker build .`.
+# Compose still selects both runtime targets explicitly.
+FROM runner AS final

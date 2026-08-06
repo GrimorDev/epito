@@ -4,6 +4,7 @@ x-epito-build: &epito-build
   build:
     context: .
     dockerfile: Dockerfile
+    target: runner
   image: epito:local
 
 x-epito-runtime: &epito-runtime
