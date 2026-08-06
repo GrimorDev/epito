@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ChangeEvent, useCallback, useEffect, useState } from "react";
+import { ChangeEvent, CSSProperties, useCallback, useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { DocumentsWorkspace, SettingsWorkspace, TeamWorkspace, type WorkspaceDocument } from "./workspace-sections";
 import {
@@ -53,17 +53,17 @@ type PortalSession = {
   membershipRole: "owner" | "admin" | "accountant" | "employee" | "viewer" | null;
 };
 type PortalOverview = {
-  tenant: { id: string; slug: string; display_name: string; legal_name: string; nip: string | null };
+  tenant: { id: string; slug: string; display_name: string; legal_name: string; nip: string | null; settings: { branding?: { accentColor?: string; headerName?: string; logoKey?: string }; notifications?: { email?: boolean; paymentReminders?: boolean } } };
   companies: Array<{ id: string; name: string }>;
   team: Array<{ id: string; email: string; full_name: string; role: string; status: string }>;
-  documents: Array<{ id: string; name: string; category: string; status: string; document_year: number; document_month: number; amount: string | null; currency: string; company_name: string; created_at: string }>;
+  documents: Array<{ id: string; name: string; category: string; status: string; document_year: number; document_month: number; amount: string | null; currency: string; issued_at: string | null; mime_type: string; file_size: number; structured_data: { analysis?: WorkspaceDocument["analysis"]; manual_override?: Record<string, unknown> }; company_name: string; created_at: string }>;
   payments: Array<{ id: string; tax_type: string; period_label: string; amount: string; currency: string; due_date: string; status: string; company_name: string; created_at: string }>;
   stats: { clients_count: number; documents_count: number; payments_due_count: number; payments_due_total: string };
 };
 
 const monthNames = ["Styczeń", "Luty", "Marzec", "Kwiecień", "Maj", "Czerwiec", "Lipiec", "Sierpień", "Wrzesień", "Październik", "Listopad", "Grudzień"];
 const categoryLabels: Record<string, string> = { sales: "Sprzedaż", costs: "Koszty", bank: "Bank", contracts: "Umowy", tax: "Podatki", other: "Inne" };
-const statusLabels: Record<string, string> = { uploaded: "W trakcie", processing: "W trakcie", verified: "Przetworzone", requires_action: "Do uzupełnienia", archived: "Archiwalne" };
+const statusLabels: Record<string, string> = { uploaded: "W kolejce", processing: "Analiza trwa", verified: "Odczytano", requires_action: "Sprawdź dane", archived: "Archiwalne" };
 const taxLabels: Record<string, string> = { vat: "VAT", pit: "PIT", cit: "CIT", zus: "ZUS", invoice: "Faktura", other: "Inna" };
 
 function initials(value: string) {
@@ -93,6 +93,23 @@ const baseDocuments: WorkspaceDocument[] = [
 const formatMoney = (amount: number) =>
   new Intl.NumberFormat("pl-PL", { style: "currency", currency: "PLN" }).format(amount);
 
+function formatDocumentMoney(amount: string, currency: string) {
+  return new Intl.NumberFormat("pl-PL", { style: "currency", currency }).format(Number(amount));
+}
+
+function documentType(mimeType: string, name: string) {
+  if (mimeType === "application/pdf") return "PDF";
+  if (mimeType === "text/csv") return "CSV";
+  if (mimeType.includes("xml")) return "XML";
+  if (mimeType.startsWith("image/")) return mimeType.endsWith("png") ? "PNG" : "JPG";
+  return name.split(".").pop()?.toUpperCase() || "PLIK";
+}
+
+function fileSizeLabel(bytes: number) {
+  if (bytes >= 1024 * 1024) return `${(bytes / 1024 / 1024).toLocaleString("pl-PL", { maximumFractionDigits: 1 })} MB`;
+  return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+}
+
 const pageMotion = {
   initial: { opacity: 0, y: 10 },
   animate: { opacity: 1, y: 0 },
@@ -120,6 +137,7 @@ export function ClientPortal({ mode }: { mode: PortalMode }) {
   const [paying, setPaying] = useState(false);
   const [paymentSuccess, setPaymentSuccess] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
   const [mobileMenu, setMobileMenu] = useState(false);
   const [messageSent, setMessageSent] = useState(false);
   const [darkMode, setDarkMode] = useState(false);
@@ -152,14 +170,22 @@ export function ClientPortal({ mode }: { mode: PortalMode }) {
     setDocuments(overviewPayload.documents.map((document) => ({
       id: document.id,
       name: document.name,
-      meta: `Dodano ${new Date(document.created_at).toLocaleDateString("pl-PL")}`,
       status: statusLabels[document.status] || document.status,
-      type: "PLIK",
+      type: documentType(document.mime_type, document.name),
       year: document.document_year,
       month: monthNames[document.document_month - 1],
       category: categoryLabels[document.category] || document.category,
-      amount: document.amount ? formatMoney(Number(document.amount)) : undefined,
-      pages: 1,
+      amount: document.amount ? formatDocumentMoney(document.amount, document.currency) : undefined,
+      pages: Number(document.structured_data?.analysis?.page_count || 1),
+      mimeType: document.mime_type,
+      fileSize: document.file_size,
+      meta: `${documentType(document.mime_type, document.name)} ${fileSizeLabel(document.file_size)}, dodano ${new Date(document.created_at).toLocaleDateString("pl-PL")}`,
+      categoryCode: document.category,
+      statusCode: document.status,
+      currency: document.currency,
+      issuedAt: document.issued_at,
+      analysis: document.structured_data?.analysis || null,
+      manualOverride: Boolean(document.structured_data?.manual_override),
     })));
   }, [production, router]);
 
@@ -183,13 +209,19 @@ export function ClientPortal({ mode }: { mode: PortalMode }) {
     return () => window.cancelAnimationFrame(frame);
   }, [loadProductionData, production]);
 
+  useEffect(() => {
+    if (!production || !overview?.documents.some((document) => document.status === "uploaded" || document.status === "processing")) return;
+    const timer = window.setInterval(() => void loadProductionData().catch(() => undefined), 4_000);
+    return () => window.clearInterval(timer);
+  }, [loadProductionData, overview?.documents, production]);
+
   const duePayments = payments.filter((payment) => payment.status !== "paid");
   const nextPayment = duePayments[0];
 
   const navigation: { label: Section; icon: LucideIcon; badge?: string }[] = [
     { label: "Pulpit", icon: LayoutDashboard },
     { label: "Płatności", icon: CreditCard, badge: String(duePayments.length) },
-    { label: "Dokumenty", icon: FileText, badge: String(documents.filter((document) => document.status !== "Przetworzone").length) },
+    { label: "Dokumenty", icon: FileText, badge: String(documents.filter((document) => document.statusCode ? document.statusCode !== "verified" : document.status !== "Przetworzone").length) },
     { label: "Wiadomości", icon: MessageSquareText, badge: production ? undefined : "1" },
     { label: "Zespół", icon: Users },
     { label: "Ustawienia", icon: Settings },
@@ -245,7 +277,7 @@ export function ClientPortal({ mode }: { mode: PortalMode }) {
         const payload = (await response.json()) as { error?: string };
         if (!response.ok) throw new Error(payload.error || "Nie udało się przesłać dokumentu.");
         await loadProductionData();
-        setPortalNotice("Dokument został zapisany.");
+        setPortalNotice("Dokument został zapisany. Trwa odczyt kwoty i danych faktury.");
       } catch (reason) {
         setPortalNotice(reason instanceof Error ? reason.message : "Nie udało się przesłać dokumentu.");
       }
@@ -276,11 +308,14 @@ export function ClientPortal({ mode }: { mode: PortalMode }) {
   }
 
   const companyName = overview?.tenant.display_name || "Kowalski Studio sp. z o.o.";
+  const headerName = overview?.tenant.settings?.branding?.headerName || companyName;
+  const accentColor = overview?.tenant.settings?.branding?.accentColor || "#CAFF65";
+  const hasLogo = Boolean(overview?.tenant.settings?.branding?.logoKey);
   const legalName = overview?.tenant.legal_name || "Kowalski Studio sp. z o.o.";
   const userName = session?.fullName || "Marcin Kowalski";
   const firstName = userName.split(/\s+/)[0] || userName;
   const userRole = session?.membershipRole === "owner" ? "Właściciel" : session?.membershipRole === "admin" ? "Administrator" : session?.membershipRole === "accountant" ? "Księgowość" : session?.membershipRole === "viewer" ? "Podgląd" : "Pracownik";
-  const actionDocuments = documents.filter((document) => document.status !== "Przetworzone").length;
+  const actionDocuments = documents.filter((document) => document.statusCode ? document.statusCode !== "verified" : document.status !== "Przetworzone").length;
   const paidTotal = payments.filter((payment) => payment.status === "paid").reduce((sum, payment) => sum + payment.amount, 0);
   const documentTotal = documents.reduce((sum, document) => sum + Number(String(document.amount || "0").replace(/[^\d,-]/g, "").replace(",", ".")), 0);
   const productionTeam = overview?.team.map((member) => ({ id: member.id, name: member.full_name, email: member.email, role: member.role, status: member.status === "active" ? "Aktywny" : "Zaproszony", initials: initials(member.full_name) }));
@@ -292,11 +327,11 @@ export function ClientPortal({ mode }: { mode: PortalMode }) {
   if (production && !overview) return <main className={darkMode ? "portal-shell theme-dark" : "portal-shell"}><div className="portal-state"><span className="brand-mark">E</span><h1>Nie udało się otworzyć panelu</h1><p>{loadError || "Spróbuj zalogować się ponownie."}</p><Link className="button button-primary" href="/logowanie">Przejdź do logowania</Link></div></main>;
 
   return (
-    <main className={darkMode ? "portal-shell theme-dark" : "portal-shell"}>
+    <main className={darkMode ? "portal-shell theme-dark" : "portal-shell"} style={{ "--mint": accentColor } as CSSProperties}>
       <aside className={mobileMenu ? "portal-sidebar sidebar-open" : "portal-sidebar"}>
         <div className="portal-brand">
-          <span className="brand-mark">E</span>
-          <span><strong>EPITO</strong><small>Panel klienta</small></span>
+          {production && hasLogo ? <img className="portal-brand-logo" src="/api/workspace/settings/logo" alt={`Logo ${headerName}`} /> : <span className="brand-mark">E</span>}
+          <span><strong>{production ? headerName : "EPITO"}</strong><small>Panel klienta</small></span>
         </div>
         <button className="sidebar-close" type="button" onClick={() => setMobileMenu(false)} aria-label="Zamknij menu"><X size={24} /></button>
 
@@ -328,11 +363,10 @@ export function ClientPortal({ mode }: { mode: PortalMode }) {
       <section className="portal-main">
         <header className="portal-topbar">
           <button className="mobile-sidebar-button" onClick={() => setMobileMenu(true)} aria-label="Otwórz menu"><Menu size={24} /></button>
-          <button className="company-switcher" type="button">
+          <div className="company-switcher" aria-label="Aktywna firma">
             <span><Building2 size={20} /></span>
             <div><small>Aktywna firma</small><strong>{companyName}</strong></div>
-            <ChevronDown size={18} />
-          </button>
+          </div>
 
           <div className="portal-user-actions">
             <button className="theme-toggle" type="button" onClick={toggleTheme} aria-label={darkMode ? "Włącz tryb jasny" : "Włącz tryb ciemny"}>
@@ -355,11 +389,16 @@ export function ClientPortal({ mode }: { mode: PortalMode }) {
               </AnimatePresence>
             </div>
 
-            <button className="user-profile" type="button">
-              <span>{initials(userName)}</span>
-              <div><strong>{userName}</strong><small>{userRole}</small></div>
-              <ChevronDown size={18} />
-            </button>
+            <div className="profile-wrap">
+              <button className="user-profile" type="button" onClick={() => setProfileOpen((value) => !value)} aria-expanded={profileOpen}>
+                <span>{initials(userName)}</span>
+                <div><strong>{userName}</strong><small>{userRole}</small></div>
+                <ChevronDown size={18} />
+              </button>
+              <AnimatePresence>
+                {profileOpen ? <motion.div className="profile-popover" initial={{ opacity: 0, y: 8, scale: .98 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 6, scale: .98 }}><div><strong>{userName}</strong><small>{session?.email || "konto demonstracyjne"}</small></div><button onClick={() => { setProfileOpen(false); selectSection("Ustawienia"); }}><Settings size={17} /> Ustawienia konta</button>{production ? <button onClick={logout}><ArrowLeft size={17} /> Wyloguj się</button> : <Link href="/"><ArrowLeft size={17} /> Strona główna</Link>}</motion.div> : null}
+              </AnimatePresence>
+            </div>
           </div>
         </header>
 
@@ -382,7 +421,7 @@ export function ClientPortal({ mode }: { mode: PortalMode }) {
                     {nextPayment ? (
                       <>
                         <div className="payment-hero-amount"><span>DO ZAPŁATY</span><strong>{formatMoney(nextPayment.amount)}</strong></div>
-                        <button className="button button-primary pay-button" onClick={() => openPayment(nextPayment)}>Zapłać teraz <ArrowRight size={19} /></button>
+                        <button className="button button-primary pay-button" onClick={() => openPayment(nextPayment)}>{production ? "Szczegóły" : "Zapłać teraz"} <ArrowRight size={19} /></button>
                         <div className="deadline-pill"><CalendarDays size={23} /><span><strong>{production ? `${daysToDeadline} dni` : "14 dni"}</strong> do terminu</span></div>
                       </>
                     ) : <div className="all-paid-badge"><Check size={18} /> Rozliczone</div>}
@@ -416,7 +455,7 @@ export function ClientPortal({ mode }: { mode: PortalMode }) {
                             <div><strong>{payment.type}</strong><small>{payment.period}</small></div>
                             <div className="list-due"><small>Termin</small><strong>{payment.due.replace(" 2026", "")}</strong></div>
                             <strong className="list-amount">{formatMoney(payment.amount)}</strong>
-                            {payment.status === "paid" ? <span className="paid-pill"><Check size={13} /> Opłacone</span> : <button className="small-pay" onClick={() => openPayment(payment)}>Zapłać</button>}
+                            {payment.status === "paid" ? <span className="paid-pill"><Check size={13} /> Opłacone</span> : <button className="small-pay" onClick={() => openPayment(payment)}>{production ? "Szczegóły" : "Zapłać"}</button>}
                           </div>
                         ))}
                         {payments.length === 0 ? <div className="portal-empty-row">Nie ma jeszcze żadnych płatności.</div> : null}
@@ -427,7 +466,7 @@ export function ClientPortal({ mode }: { mode: PortalMode }) {
                       <div className="panel-card-heading"><div><h3>Ostatnie dokumenty</h3><p>Najnowsza aktywność.</p></div><button onClick={() => selectSection("Dokumenty")}>Wszystkie <ArrowRight size={16} /></button></div>
                       <div className="document-mini-list">
                         {documents.slice(0, 3).map((document) => (
-                          <div key={document.id}><span>{document.type}</span><div><strong>{document.name}</strong><small>{document.meta}</small></div><b className={document.status === "Przetworzone" ? "done" : "pending"}>{document.status}</b></div>
+                            <div key={document.id}><span>{document.type}</span><div><strong>{document.name}</strong><small>{document.meta}</small></div><b className={document.status === "Przetworzone" || document.status === "Odczytano" ? "done" : "pending"}>{document.status}</b></div>
                         ))}
                         {documents.length === 0 ? <div className="portal-empty-row">Nie ma jeszcze żadnych dokumentów.</div> : null}
                       </div>
@@ -460,7 +499,7 @@ export function ClientPortal({ mode }: { mode: PortalMode }) {
                           <div><strong>{payment.type}, {payment.period}</strong><small>Termin {payment.due}</small></div>
                           <strong>{formatMoney(payment.amount)}</strong>
                           <span className={payment.status === "paid" ? "paid-pill" : payment.status === "scheduled" ? "scheduled-pill" : "due-pill"}>{payment.status === "paid" ? "Opłacone" : payment.status === "scheduled" ? "Zaplanowane" : "Do zapłaty"}</span>
-                          {payment.status !== "paid" && <button className="small-pay" onClick={() => openPayment(payment)}>Zapłać <ArrowRight size={14} /></button>}
+                          {payment.status !== "paid" && <button className="small-pay" onClick={() => openPayment(payment)}>{production ? "Szczegóły" : "Zapłać"} <ArrowRight size={14} /></button>}
                         </div>
                       ))}
                       {payments.length === 0 ? <div className="portal-empty-row">Nie ma jeszcze płatności do wyświetlenia.</div> : null}
@@ -494,7 +533,7 @@ export function ClientPortal({ mode }: { mode: PortalMode }) {
 
               {section === "Zespół" && <TeamWorkspace initialMembers={production ? productionTeam : undefined} organizationName={companyName} production={production} onChanged={loadProductionData} />}
 
-              {section === "Ustawienia" && <SettingsWorkspace production={production} organization={overview ? { displayName: overview.tenant.display_name, legalName: overview.tenant.legal_name, nip: overview.tenant.nip, slug: overview.tenant.slug } : undefined} onChanged={loadProductionData} />}
+              {section === "Ustawienia" && <SettingsWorkspace production={production} organization={overview ? { displayName: overview.tenant.display_name, legalName: overview.tenant.legal_name, nip: overview.tenant.nip, slug: overview.tenant.slug, settings: overview.tenant.settings } : undefined} onChanged={loadProductionData} />}
             </motion.div>
           </AnimatePresence>
         </div>

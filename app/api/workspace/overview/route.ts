@@ -13,8 +13,8 @@ export async function GET(request: NextRequest) {
 
   const data = await withTenantTransaction(session.tenantId, session.userId, async (client) => {
     const [tenantResult, companiesResult, teamResult, documentsResult, paymentsResult, statsResult] = await Promise.all([
-      client.query<{ id: string; slug: string; display_name: string; legal_name: string; nip: string | null }>(
-        "select id, slug, display_name, legal_name, nip from tenants where id = $1",
+      client.query<{ id: string; slug: string; display_name: string; legal_name: string; nip: string | null; settings: Record<string, unknown> }>(
+        "select id, slug, display_name, legal_name, nip, settings from tenants where id = $1",
         [session.tenantId],
       ),
       client.query<{
@@ -51,12 +51,17 @@ export async function GET(request: NextRequest) {
         document_month: number;
         amount: string | null;
         currency: string;
+        issued_at: string | null;
+        mime_type: string;
+        file_size: number;
+        structured_data: Record<string, unknown>;
         company_name: string;
         created_at: string;
       }>(`
         select document.id, document.name, document.category, document.status,
           document.document_year, document.document_month, document.amount::text,
-          document.currency, company.name as company_name, document.created_at
+          document.currency, document.issued_at::text, document.mime_type, document.file_size,
+          document.structured_data, company.name as company_name, document.created_at
         from documents document
         join client_companies company on company.id = document.client_company_id
         where document.deleted_at is null

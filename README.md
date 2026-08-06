@@ -49,7 +49,7 @@ docker compose up -d --build
 
 Szczegółowa konfiguracja Portainera, prywatnego GHCR, domeny i aktualizacji znajduje się w [PORTAINER.md](PORTAINER.md).
 
-Stack uruchamia aplikację, PostgreSQL 16, Redis 7 oraz jednorazowy migrator. Bazy nie publikują portów na hoście. PostgreSQL wykorzystuje osobne konto administracyjne i ograniczoną rolę aplikacyjną z wymuszonym RLS, Redis ma AOF i uwierzytelnianie, a dokumenty są zapisywane w trwałym wolumenie `uploads_data`.
+Stack uruchamia aplikację, osobny worker analizy dokumentów, PostgreSQL 16, Redis 7 oraz jednorazowy migrator. Bazy nie publikują portów na hoście. PostgreSQL wykorzystuje osobne konto administracyjne i ograniczoną rolę aplikacyjną z wymuszonym RLS, Redis ma AOF i uwierzytelnianie, a dokumenty oraz logo organizacji są zapisywane w trwałym wolumenie `uploads_data`. Worker najpierw odczytuje tekst osadzony w PDF, a skany i zdjęcia kieruje do lokalnego OCR bez wysyłania dokumentów do zewnętrznej usługi.
 
 ## Automatyczne obrazy
 
@@ -61,4 +61,4 @@ ghcr.io/grimordev/epito:latest
 
 ## Status produktu
 
-Logowanie B2B, organizacje, zespół, płatności, ustawienia i magazyn dokumentów zapisują dane produkcyjne. Publiczne demo pozostaje odseparowane od PostgreSQL. Integracja operatora płatności, produkcyjny moduł wiadomości, automatyczne backupy i komplet dokumentacji RODO wymagają dalszej konfiguracji przed komercyjnym uruchomieniem.
+Logowanie B2B, organizacje, zespół, płatności, ustawienia marki i magazyn dokumentów zapisują dane produkcyjne. Podgląd pokazuje oryginalny PDF lub obraz, a odczytaną kwotę można zweryfikować i poprawić ręcznie. Publiczne demo pozostaje odseparowane od PostgreSQL. Integracja operatora płatności, produkcyjny moduł wiadomości, automatyczne backupy i komplet dokumentacji RODO wymagają dalszej konfiguracji przed komercyjnym uruchomieniem.

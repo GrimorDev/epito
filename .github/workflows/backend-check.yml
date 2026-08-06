@@ -41,6 +41,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Verify invoice extraction rules
+        run: npm run test:invoice
+
       - name: Prepare ephemeral test secrets
         run: |
           install -d -m 700 /tmp/epito-secrets

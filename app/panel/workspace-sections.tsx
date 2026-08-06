@@ -1,6 +1,6 @@
 "use client";
 
-import { ChangeEvent, Dispatch, SetStateAction, useMemo, useState } from "react";
+import { ChangeEvent, Dispatch, FormEvent, SetStateAction, useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   Bell,
@@ -16,10 +16,12 @@ import {
   Globe2,
   KeyRound,
   Mail,
+  Maximize2,
   MoreHorizontal,
   Palette,
   Pencil,
   Plus,
+  RefreshCw,
   Save,
   Search,
   ShieldCheck,
@@ -41,6 +43,21 @@ export type WorkspaceDocument = {
   category: string;
   amount?: string;
   pages?: number;
+  mimeType?: string;
+  fileSize?: number;
+  categoryCode?: string;
+  statusCode?: string;
+  currency?: string;
+  issuedAt?: string | null;
+  analysis?: {
+    state?: string;
+    method?: "pdf_text" | "ocr";
+    confidence?: number;
+    amount_source?: string | null;
+    reason?: string | null;
+    page_count?: number;
+  } | null;
+  manualOverride?: boolean;
 };
 
 type DocumentsProps = {
@@ -53,6 +70,18 @@ type DocumentsProps = {
 };
 
 const months = ["Styczeń", "Luty", "Marzec", "Kwiecień", "Maj", "Czerwiec", "Lipiec", "Sierpień", "Wrzesień", "Październik", "Listopad", "Grudzień"];
+const categoryOptions = [
+  ["sales", "Sprzedaż"], ["costs", "Koszty"], ["bank", "Bank"], ["contracts", "Umowy"], ["tax", "Podatki"], ["other", "Inne"],
+] as const;
+
+function DocumentViewer({ document, production, fullscreen = false }: { document: WorkspaceDocument; production: boolean; fullscreen?: boolean }) {
+  if (!production) {
+    return <div className="pdf-paper"><div className="pdf-brand-line"><span>FAKTURA</span><b>{document.amount ?? "Dokument"}</b></div><i className="pdf-line wide" /><i className="pdf-line medium" /><div className="pdf-columns"><span><i /><i /><i /></span><span><i /><i /></span></div><div className="pdf-table-mock"><i /><i /><i /><i /></div><div className="pdf-total"><span /><strong /></div></div>;
+  }
+  const source = `/api/workspace/documents/${document.id}?inline=1`;
+  if (document.mimeType?.startsWith("image/")) return <img className="real-document-image" src={source} alt={`Podgląd ${document.name}`} />;
+  return <iframe className={fullscreen ? "real-document-frame fullscreen" : "real-document-frame"} src={source} title={`Podgląd dokumentu ${document.name}`} />;
+}
 
 export function DocumentsWorkspace({ documents, setDocuments, onUpload, production = false, onChanged, onNotice }: DocumentsProps) {
   const [year, setYear] = useState(() => documents[0]?.year || new Date().getFullYear());
@@ -63,6 +92,14 @@ export function DocumentsWorkspace({ documents, setDocuments, onUpload, producti
   const [previewId, setPreviewId] = useState<string | number | null>(documents[0]?.id ?? null);
   const [editingId, setEditingId] = useState<string | number | null>(null);
   const [draftName, setDraftName] = useState("");
+  const [draftCategory, setDraftCategory] = useState("other");
+  const [draftAmount, setDraftAmount] = useState("");
+  const [draftCurrency, setDraftCurrency] = useState("PLN");
+  const [draftStatus, setDraftStatus] = useState("verified");
+  const [draftIssuedAt, setDraftIssuedAt] = useState("");
+  const [editPending, setEditPending] = useState(false);
+  const [fullscreenId, setFullscreenId] = useState<string | number | null>(null);
+  const [reanalyzingId, setReanalyzingId] = useState<string | number | null>(null);
   const [folders, setFolders] = useState(["Sprzedaż", "Koszty", "Bank", "Umowy"]);
   const [newFolder, setNewFolder] = useState("");
   const [addingFolder, setAddingFolder] = useState(false);
@@ -75,6 +112,17 @@ export function DocumentsWorkspace({ documents, setDocuments, onUpload, producti
   }), [documents, year, month, category, query]);
 
   const preview = documents.find((document) => document.id === previewId) ?? null;
+  const fullscreenDocument = documents.find((document) => document.id === fullscreenId) ?? null;
+  const editingDocument = documents.find((document) => document.id === editingId) ?? null;
+
+  useEffect(() => {
+    if (!fullscreenDocument && !editingDocument) return;
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") { setFullscreenId(null); setEditingId(null); }
+    }
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [fullscreenDocument, editingDocument]);
 
   async function removeDocument(id: string | number) {
     if (production) {
@@ -93,24 +141,48 @@ export function DocumentsWorkspace({ documents, setDocuments, onUpload, producti
   }
 
   function beginEdit(document: WorkspaceDocument) {
+    setFullscreenId(null);
     setEditingId(document.id);
     setDraftName(document.name);
+    setDraftCategory(document.categoryCode || categoryOptions.find(([, label]) => label === document.category)?.[0] || "other");
+    setDraftAmount(document.amount ? document.amount.replace(/[^\d,-]/g, "").replace(",", ".") : "");
+    setDraftCurrency(document.currency || "PLN");
+    setDraftStatus(document.statusCode === "requires_action" || document.status === "Do uzupełnienia" || document.status === "Sprawdź dane" ? "requires_action" : "verified");
+    setDraftIssuedAt(document.issuedAt || "");
   }
 
   async function saveEdit() {
     if (!editingId || !draftName.trim()) return;
+    setEditPending(true);
     if (production) {
-      const response = await fetch(`/api/workspace/documents/${editingId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: draftName.trim() }) });
+      const response = await fetch(`/api/workspace/documents/${editingId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: draftName.trim(), category: draftCategory, amount: draftAmount, currency: draftCurrency, status: draftStatus, issuedAt: draftIssuedAt }) });
       const payload = (await response.json()) as { error?: string };
       if (!response.ok) {
-        onNotice?.(payload.error || "Nie udało się zmienić nazwy.");
+        onNotice?.(payload.error || "Nie udało się zapisać danych dokumentu.");
+        setEditPending(false);
         return;
       }
       await onChanged?.();
-      onNotice?.("Nazwa dokumentu została zapisana.");
+      onNotice?.("Dane dokumentu zostały zapisane.");
     }
-    setDocuments((current) => current.map((document) => document.id === editingId ? { ...document, name: draftName.trim() } : document));
+    setDocuments((current) => current.map((document) => document.id === editingId ? { ...document, name: draftName.trim(), categoryCode: draftCategory, category: categoryOptions.find(([code]) => code === draftCategory)?.[1] || "Inne", amount: draftAmount ? `${Number(draftAmount).toLocaleString("pl-PL", { minimumFractionDigits: 2 })} ${draftCurrency}` : undefined, currency: draftCurrency, statusCode: draftStatus, status: draftStatus === "verified" ? (production ? "Odczytano" : "Przetworzone") : (production ? "Sprawdź dane" : "Do uzupełnienia"), issuedAt: draftIssuedAt || null, manualOverride: production } : document));
+    setEditPending(false);
     setEditingId(null);
+  }
+
+  async function reanalyzeDocument(id: string | number) {
+    setReanalyzingId(id);
+    try {
+      const response = await fetch(`/api/workspace/documents/${id}`, { method: "POST" });
+      const payload = (await response.json()) as { error?: string };
+      if (!response.ok) throw new Error(payload.error || "Nie udało się uruchomić analizy.");
+      await onChanged?.();
+      onNotice?.("Dokument trafił do kolejki analizy. Wynik pojawi się automatycznie.");
+    } catch (reason) {
+      onNotice?.(reason instanceof Error ? reason.message : "Nie udało się uruchomić analizy.");
+    } finally {
+      setReanalyzingId(null);
+    }
   }
 
   function addFolder() {
@@ -140,7 +212,7 @@ export function DocumentsWorkspace({ documents, setDocuments, onUpload, producti
 
       <div className="document-layout">
         <aside className="folder-sidebar">
-          <div className="folder-heading"><span>FOLDERY</span><button onClick={() => setAddingFolder(true)} aria-label="Dodaj folder"><FolderPlus size={18} /></button></div>
+          <div className="folder-heading"><span>FOLDERY</span>{!production ? <button onClick={() => setAddingFolder(true)} aria-label="Dodaj folder"><FolderPlus size={18} /></button> : null}</div>
           <button className={category === "Wszystkie" ? "active" : ""} onClick={() => setCategory("Wszystkie")}><Folder size={18} /><span>Wszystkie</span><b>{documents.filter((item) => item.year === year && item.month === month).length}</b></button>
           {folders.map((folder) => (
             <button key={folder} className={category === folder ? "active" : ""} onClick={() => setCategory(folder)}><Folder size={18} /><span>{folder}</span><b>{documents.filter((item) => item.year === year && item.month === month && item.category === folder).length}</b></button>
@@ -173,12 +245,12 @@ export function DocumentsWorkspace({ documents, setDocuments, onUpload, producti
                   </button>
                   <span className="file-tile"><FileText size={19} /><small>{document.type}</small></span>
                   <div className="document-name">
-                    {editingId === document.id ? <div className="inline-edit"><input value={draftName} onChange={(event) => setDraftName(event.target.value)} autoFocus /><button onClick={saveEdit}><Check size={16} /></button><button onClick={() => setEditingId(null)}><X size={16} /></button></div> : <><strong>{document.name}</strong><small>{document.meta}</small></>}
+                    <><strong>{document.name}</strong><small>{document.meta}</small></>
                   </div>
                   <span className="document-category">{document.category}</span>
-                  <span className={document.status === "Przetworzone" ? "doc-status done" : document.status === "Do uzupełnienia" ? "doc-status missing" : "doc-status pending"}>{document.status}</span>
+                  <span className={document.status === "Przetworzone" || document.status === "Odczytano" ? "doc-status done" : document.status === "Do uzupełnienia" || document.status === "Sprawdź dane" ? "doc-status missing" : "doc-status pending"}>{document.status}</span>
                   <strong className="document-amount">{document.amount ?? "Brak"}</strong>
-                  <button className="row-menu" aria-label="Więcej opcji"><MoreHorizontal size={20} /></button>
+                  {!production ? <button className="row-menu" aria-label="Więcej opcji"><MoreHorizontal size={20} /></button> : <span />}
                 </div>
                 <AnimatePresence initial={false}>
                   {expandedId === document.id && (
@@ -205,27 +277,28 @@ export function DocumentsWorkspace({ documents, setDocuments, onUpload, producti
           {preview ? (
             <>
               <div className="preview-panel-head"><div><small>PODGLĄD</small><strong>{preview.name}</strong></div><button onClick={() => setPreviewId(null)} aria-label="Zamknij podgląd"><X size={20} /></button></div>
-              <div className="pdf-preview">
-                <div className="pdf-paper">
-                  <div className="pdf-brand-line"><span>FAKTURA</span><b>{preview.amount ?? "Dokument"}</b></div>
-                  <i className="pdf-line wide" /><i className="pdf-line medium" />
-                  <div className="pdf-columns"><span><i /><i /><i /></span><span><i /><i /></span></div>
-                  <div className="pdf-table-mock"><i /><i /><i /><i /></div>
-                  <div className="pdf-total"><span /><strong /></div>
-                </div>
-                <span>Strona 1 z {preview.pages ?? 1}</span>
-              </div>
+              <div className="pdf-preview"><DocumentViewer document={preview} production={production} /><span>{production ? "Oryginalny plik" : `Strona 1 z ${preview.pages ?? 1}`}</span></div>
               <div className="preview-metadata">
                 <div><span>Folder</span><strong>{preview.category}</strong></div>
                 <div><span>Okres</span><strong>{preview.month} {preview.year}</strong></div>
                 <div><span>Status</span><strong>{preview.status}</strong></div>
                 <div><span>Kwota</span><strong>{preview.amount ?? "Nie dotyczy"}</strong></div>
               </div>
-              <div className="preview-actions">{production ? <a className="document-download-link" href={`/api/workspace/documents/${preview.id}`}><Download size={17} /> Pobierz</a> : <button><Download size={17} /> Pobierz</button>}<button onClick={() => beginEdit(preview)}><Pencil size={17} /> Edytuj</button></div>
+              {preview.manualOverride ? <div className="analysis-note"><strong>Dane poprawione ręcznie</strong><span>Kwota, status lub data zostały zatwierdzone przez użytkownika i mają pierwszeństwo przed OCR.</span></div> : preview.analysis ? <div className="analysis-note"><strong>{preview.analysis.method === "ocr" ? "Odczyt OCR" : "Tekst z PDF"}{typeof preview.analysis.confidence === "number" && preview.analysis.confidence > 0 ? ` · ${Math.round(preview.analysis.confidence * 100)}% pewności` : ""}</strong><span>{preview.analysis.reason || (preview.analysis.amount_source ? `Kwota znaleziona przy polu „${preview.analysis.amount_source}”.` : "Dane dokumentu zostały przeanalizowane.")}</span></div> : <div className="analysis-note"><strong>{preview.statusCode === "processing" || preview.statusCode === "uploaded" ? "Analiza trwa" : "Brak analizy"}</strong><span>{preview.statusCode === "processing" || preview.statusCode === "uploaded" ? "Worker odczytuje tekst i kwotę. Widok odświeży się automatycznie po zakończeniu." : "Kwotę i metadane możesz uzupełnić ręcznie."}</span></div>}
+              {production && !preview.manualOverride && preview.statusCode !== "processing" ? <button className="reanalyze-document" onClick={() => void reanalyzeDocument(preview.id)} disabled={reanalyzingId === preview.id}><RefreshCw size={16} className={reanalyzingId === preview.id ? "spinning" : ""} />{reanalyzingId === preview.id ? "Dodawanie do kolejki" : "Analizuj ponownie"}</button> : null}
+              <div className="preview-actions"><button onClick={() => setFullscreenId(preview.id)}><Maximize2 size={17} /> Pełny ekran</button>{production ? <a className="document-download-link" href={`/api/workspace/documents/${preview.id}`}><Download size={17} /> Pobierz</a> : <button><Download size={17} /> Pobierz</button>}<button onClick={() => beginEdit(preview)}><Pencil size={17} /> Dane</button></div>
             </>
           ) : <div className="preview-empty"><Eye size={28} /><strong>Wybierz dokument</strong><p>Podgląd pojawi się tutaj bez otwierania nowej karty.</p></div>}
         </aside>
       </div>
+
+      <AnimatePresence>
+        {fullscreenDocument ? <motion.div className="document-modal-backdrop" role="dialog" aria-modal="true" aria-label={`Pełny podgląd ${fullscreenDocument.name}`} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}><motion.div className="document-fullscreen-modal" initial={{ scale: .98, y: 10 }} animate={{ scale: 1, y: 0 }} exit={{ scale: .98, y: 10 }}><header><div><small>ORYGINALNY DOKUMENT</small><strong>{fullscreenDocument.name}</strong></div><div>{production ? <a href={`/api/workspace/documents/${fullscreenDocument.id}`}><Download size={18} /> Pobierz</a> : null}<button onClick={() => beginEdit(fullscreenDocument)}><Pencil size={18} /> Dane</button><button className="icon-only" onClick={() => setFullscreenId(null)} aria-label="Zamknij pełny podgląd"><X size={22} /></button></div></header><div className="document-fullscreen-canvas"><DocumentViewer document={fullscreenDocument} production={production} fullscreen /></div></motion.div></motion.div> : null}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {editingDocument ? <motion.div className="document-modal-backdrop" role="dialog" aria-modal="true" aria-label="Edycja danych dokumentu" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}><motion.form className="document-editor-modal" onSubmit={(event) => { event.preventDefault(); void saveEdit(); }} initial={{ scale: .97, y: 16 }} animate={{ scale: 1, y: 0 }} exit={{ scale: .97, y: 12 }}><button className="modal-close" type="button" onClick={() => setEditingId(null)} aria-label="Zamknij edycję"><X size={22} /></button><span className="modal-kicker">DANE DOKUMENTU</span><h2>Sprawdź i popraw odczyt</h2><p>Automatyczny odczyt jest pomocą. Zapis ręczny ma pierwszeństwo i trafia do rejestru zmian.</p><label>Nazwa pliku<input value={draftName} onChange={(event) => setDraftName(event.target.value)} required maxLength={240} /></label><div className="document-editor-grid"><label>Folder<select value={draftCategory} onChange={(event) => setDraftCategory(event.target.value)}>{categoryOptions.map(([code, label]) => <option value={code} key={code}>{label}</option>)}</select></label><label>Status<select value={draftStatus} onChange={(event) => setDraftStatus(event.target.value)}><option value="verified">Sprawdzony</option><option value="requires_action">Wymaga uzupełnienia</option></select></label><label>Kwota brutto<input inputMode="decimal" value={draftAmount} onChange={(event) => setDraftAmount(event.target.value)} placeholder="0,00" /></label><label>Waluta<select value={draftCurrency} onChange={(event) => setDraftCurrency(event.target.value)}><option>PLN</option><option>EUR</option><option>USD</option><option>GBP</option><option>CHF</option></select></label><label>Data wystawienia<input type="date" value={draftIssuedAt} onChange={(event) => setDraftIssuedAt(event.target.value)} /></label></div><button className="button button-primary button-wide" type="submit" disabled={editPending}>{editPending ? "Zapisywanie" : "Zapisz dane dokumentu"}</button></motion.form></motion.div> : null}
+      </AnimatePresence>
     </section>
   );
 }
@@ -252,9 +325,12 @@ export function TeamWorkspace({ initialMembers, organizationName = "Kowalski Stu
   const [email, setEmail] = useState("");
   const [role, setRole] = useState("employee");
   const [password, setPassword] = useState("");
+  const [teamQuery, setTeamQuery] = useState("");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
+  const [rolePending, setRolePending] = useState<string | number | null>(null);
   const visibleTeam = production && initialMembers ? initialMembers : team;
+  const filteredTeam = visibleTeam.filter((member) => `${member.name} ${member.email}`.toLocaleLowerCase("pl").includes(teamQuery.toLocaleLowerCase("pl")));
 
   async function inviteMember() {
     if (!name.trim() || !email.trim()) return;
@@ -281,6 +357,25 @@ export function TeamWorkspace({ initialMembers, organizationName = "Kowalski Stu
     setInviteOpen(false);
   }
 
+  async function changeMemberRole(member: TeamMember, nextRole: string) {
+    if (!production) {
+      setTeam((current) => current.map((item) => item.id === member.id ? { ...item, role: nextRole } : item));
+      return;
+    }
+    setError("");
+    setRolePending(member.id);
+    try {
+      const response = await fetch("/api/workspace/team", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ userId: member.id, role: nextRole }) });
+      const payload = (await response.json()) as { error?: string };
+      if (!response.ok) throw new Error(payload.error || "Nie udało się zmienić roli.");
+      await onChanged?.();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Nie udało się zmienić roli.");
+    } finally {
+      setRolePending(null);
+    }
+  }
+
   return (
     <section className="subpage team-page">
       <div className="page-heading"><div><p>Użytkownicy firmy</p><h1>Zespół i uprawnienia</h1><span>Administrator biura zaprasza pracowników i określa ich dostęp.</span></div><button className="upload-button" onClick={() => setInviteOpen(true)}><UserPlus size={18} /> Zaproś pracownika</button></div>
@@ -290,12 +385,14 @@ export function TeamWorkspace({ initialMembers, organizationName = "Kowalski Stu
         <article><Mail size={23} /><div><small>OCZEKUJĄCE ZAPROSZENIA</small><strong>{visibleTeam.filter((item) => item.status === "Zaproszony").length} osoba</strong></div></article>
       </div>
       <div className="panel-card team-table-card">
-        <div className="panel-card-heading"><div><h3>Pracownicy {organizationName}</h3><p>Uprawnienia dotyczą tylko tej organizacji.</p></div><label className="document-search"><Search size={17} /><input placeholder="Szukaj pracownika" /></label></div>
+        {error && !inviteOpen ? <div className="team-notice">{error}</div> : null}
+        <div className="panel-card-heading"><div><h3>Pracownicy {organizationName}</h3><p>Uprawnienia dotyczą tylko tej organizacji.</p></div><label className="document-search"><Search size={17} /><input value={teamQuery} onChange={(event) => setTeamQuery(event.target.value)} placeholder="Szukaj pracownika" /></label></div>
         <div className="team-table-head"><span>Użytkownik</span><span>Rola</span><span>Status</span><span>Ostatnia aktywność</span><span /></div>
         <div className="team-table">
-          {visibleTeam.map((member) => (
-            <div key={member.id}><span className="team-avatar">{member.initials}</span><div><strong>{member.name}</strong><small>{member.email}</small></div><select value={member.role} onChange={(event) => setTeam((current) => current.map((item) => item.id === member.id ? { ...item, role: event.target.value } : item))} disabled={production}><option value="admin">Administrator</option><option value="accountant">Księgowość</option><option value="employee">Dokumenty</option><option value="viewer">Tylko odczyt</option><option value="owner">Właściciel</option></select><span className={member.status === "Aktywny" ? "member-status active" : "member-status invited"}>{member.status}</span><span className="last-seen">{member.status === "Aktywny" ? "Aktywne konto" : "Nie zalogował się"}</span>{!production ? <button onClick={() => setTeam((current) => current.filter((item) => item.id !== member.id))} aria-label={`Usuń ${member.name}`}><Trash2 size={18} /></button> : <span />}</div>
+          {filteredTeam.map((member) => (
+            <div key={member.id}><span className="team-avatar">{member.initials}</span><div><strong>{member.name}</strong><small>{member.email}</small></div>{member.role === "owner" ? <strong className="team-role-label">Właściciel</strong> : <select value={member.role} onChange={(event) => void changeMemberRole(member, event.target.value)} disabled={rolePending === member.id}><option value="admin">Administrator</option><option value="accountant">Księgowość</option><option value="employee">Dokumenty</option><option value="viewer">Tylko odczyt</option></select>}<span className={member.status === "Aktywny" ? "member-status active" : "member-status invited"}>{member.status}</span><span className="last-seen">{member.status === "Aktywny" ? "Aktywne konto" : "Nie zalogował się"}</span>{!production ? <button onClick={() => setTeam((current) => current.filter((item) => item.id !== member.id))} aria-label={`Usuń ${member.name}`}><Trash2 size={18} /></button> : <span />}</div>
           ))}
+          {filteredTeam.length === 0 ? <div className="team-empty">Nie znaleziono pracownika.</div> : null}
         </div>
       </div>
 
@@ -308,17 +405,34 @@ export function TeamWorkspace({ initialMembers, organizationName = "Kowalski Stu
 
 type SettingsWorkspaceProps = {
   production?: boolean;
-  organization?: { displayName: string; legalName: string; nip: string | null; slug: string };
+  organization?: {
+    displayName: string;
+    legalName: string;
+    nip: string | null;
+    slug: string;
+    settings?: {
+      branding?: { accentColor?: string; headerName?: string; logoKey?: string };
+      notifications?: { email?: boolean; paymentReminders?: boolean };
+    };
+  };
   onChanged?: () => Promise<void> | void;
 };
 
 export function SettingsWorkspace({ production = false, organization, onChanged }: SettingsWorkspaceProps = {}) {
+  const [activeTab, setActiveTab] = useState<"organization" | "appearance" | "notifications" | "security">("organization");
   const [saved, setSaved] = useState(false);
-  const [emailNotifications, setEmailNotifications] = useState(true);
-  const [paymentReminders, setPaymentReminders] = useState(true);
+  const [emailNotifications, setEmailNotifications] = useState(organization?.settings?.notifications?.email ?? true);
+  const [paymentReminders, setPaymentReminders] = useState(organization?.settings?.notifications?.paymentReminders ?? true);
   const [displayName, setDisplayName] = useState(organization?.displayName || "Kowalski Studio");
   const [legalName, setLegalName] = useState(organization?.legalName || "Kowalski Studio sp. z o.o.");
   const [nip, setNip] = useState(organization?.nip || "525 293 18 42");
+  const [headerName, setHeaderName] = useState(organization?.settings?.branding?.headerName || organization?.displayName || "Kowalski Studio");
+  const [accentColor, setAccentColor] = useState(organization?.settings?.branding?.accentColor || "#CAFF65");
+  const [logoVersion, setLogoVersion] = useState(() => Date.now());
+  const [logoUploading, setLogoUploading] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [passwordPending, setPasswordPending] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
 
@@ -327,7 +441,7 @@ export function SettingsWorkspace({ production = false, organization, onChanged 
     if (production) {
       setPending(true);
       try {
-        const response = await fetch("/api/workspace/settings", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ displayName, legalName, nip }) });
+        const response = await fetch("/api/workspace/settings", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ displayName, legalName, nip, headerName, accentColor, emailNotifications, paymentReminders }) });
         const payload = (await response.json()) as { error?: string };
         if (!response.ok) throw new Error(payload.error || "Nie udało się zapisać ustawień.");
         await onChanged?.();
@@ -342,19 +456,69 @@ export function SettingsWorkspace({ production = false, organization, onChanged 
     window.setTimeout(() => setSaved(false), 2200);
   }
 
+  async function uploadLogo(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    if (!production) { setLogoVersion(Date.now()); return; }
+    setLogoUploading(true);
+    setError("");
+    try {
+      const form = new FormData();
+      form.set("logo", file);
+      const response = await fetch("/api/workspace/settings/logo", { method: "POST", body: form });
+      const payload = (await response.json()) as { error?: string };
+      if (!response.ok) throw new Error(payload.error || "Nie udało się zapisać logo.");
+      setLogoVersion(Date.now());
+      await onChanged?.();
+      setSaved(true);
+      window.setTimeout(() => setSaved(false), 2200);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Nie udało się zapisać logo.");
+    } finally {
+      setLogoUploading(false);
+      event.target.value = "";
+    }
+  }
+
+  async function changePassword(event: FormEvent) {
+    event.preventDefault();
+    setError("");
+    if (!production) { setSaved(true); return; }
+    setPasswordPending(true);
+    try {
+      const response = await fetch("/api/auth/password", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ currentPassword, newPassword }) });
+      const payload = (await response.json()) as { error?: string };
+      if (!response.ok) throw new Error(payload.error || "Nie udało się zmienić hasła.");
+      setCurrentPassword("");
+      setNewPassword("");
+      setSaved(true);
+      window.setTimeout(() => setSaved(false), 2200);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Nie udało się zmienić hasła.");
+    } finally {
+      setPasswordPending(false);
+    }
+  }
+
+  async function copyPortalAddress() {
+    const address = `https://${organization?.slug || "client231"}.epito.pl`;
+    await navigator.clipboard.writeText(address);
+    setSaved(true);
+    window.setTimeout(() => setSaved(false), 1500);
+  }
+
   return (
     <section className="subpage settings-page">
       <div className="page-heading"><div><p>Konfiguracja organizacji</p><h1>Ustawienia konta</h1><span>Dane firmy, adres portalu, wygląd i bezpieczeństwo.</span></div><button className="upload-button" onClick={saveSettings} disabled={pending}><Save size={18} /> {pending ? "Zapisywanie" : "Zapisz zmiany"}</button></div>
       <AnimatePresence>{saved && <motion.div className="settings-saved" initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}><Check size={18} /> Ustawienia zostały zapisane.</motion.div>}</AnimatePresence>
       {error ? <div className="settings-saved">{error}</div> : null}
       <div className="settings-layout">
-        <nav className="settings-nav"><button className="active"><Globe2 size={18} /> Organizacja</button><button><Palette size={18} /> Wygląd portalu</button><button><Bell size={18} /> Powiadomienia</button><button><KeyRound size={18} /> Bezpieczeństwo</button></nav>
+        <nav className="settings-nav" aria-label="Sekcje ustawień"><button className={activeTab === "organization" ? "active" : ""} onClick={() => setActiveTab("organization")}><Globe2 size={18} /> Organizacja</button><button className={activeTab === "appearance" ? "active" : ""} onClick={() => setActiveTab("appearance")}><Palette size={18} /> Wygląd portalu</button><button className={activeTab === "notifications" ? "active" : ""} onClick={() => setActiveTab("notifications")}><Bell size={18} /> Powiadomienia</button><button className={activeTab === "security" ? "active" : ""} onClick={() => setActiveTab("security")}><KeyRound size={18} /> Bezpieczeństwo</button></nav>
         <div className="settings-content">
-          <article className="settings-card"><div className="settings-card-head"><Globe2 size={21} /><div><h3>Dane organizacji</h3><p>Informacje widoczne w panelu pracowników.</p></div></div><div className="settings-form-grid"><label>Pełna nazwa firmy<input value={legalName} onChange={(event) => setLegalName(event.target.value)} /></label><label>NIP<input value={nip} onChange={(event) => setNip(event.target.value)} /></label><label>Nazwa w panelu<input value={displayName} onChange={(event) => setDisplayName(event.target.value)} /></label><label>Tryb danych<input value={production ? "Dane produkcyjne" : "Demonstracja"} readOnly /></label></div></article>
-          <article className="settings-card"><div className="settings-card-head"><Globe2 size={21} /><div><h3>Adres portalu</h3><p>Dedykowany adres logowania dla Twojej firmy.</p></div></div><label className="domain-input"><span>https://</span><input value={organization?.slug || "client231"} readOnly={production} onChange={() => undefined} /><b>.epito.pl</b><button aria-label="Kopiuj adres"><Copy size={17} /></button></label><small className="field-help">Zmiana adresu wymaga kontaktu z administratorem platformy.</small></article>
-          <article className="settings-card"><div className="settings-card-head"><Palette size={21} /><div><h3>Wygląd portalu</h3><p>Dopasuj panel do marki swojej firmy.</p></div></div><div className="branding-row"><button className="logo-upload"><Plus size={20} /><span>Dodaj logo</span></button><label>Kolor akcentu<div className="color-control"><input type="color" defaultValue="#caff65" /><input defaultValue="#CAFF65" /></div></label><label>Nazwa w nagłówku<input value={displayName} onChange={(event) => setDisplayName(event.target.value)} /></label></div></article>
-          <article className="settings-card"><div className="settings-card-head"><Bell size={21} /><div><h3>Powiadomienia</h3><p>Określ, jakie wiadomości otrzymuje zespół.</p></div></div><div className="toggle-list"><label><span><strong>Powiadomienia e-mail</strong><small>Nowe dokumenty i wiadomości od biura.</small></span><input type="checkbox" checked={emailNotifications} onChange={() => setEmailNotifications((value) => !value)} /></label><label><span><strong>Przypomnienia o płatnościach</strong><small>Wiadomość 3 dni przed terminem.</small></span><input type="checkbox" checked={paymentReminders} onChange={() => setPaymentReminders((value) => !value)} /></label></div></article>
-          <article className="settings-card security-card"><div className="settings-card-head"><ShieldCheck size={21} /><div><h3>Bezpieczeństwo i nadzór</h3><p>Administrator organizacji kontroluje pracowników. Zespół Epito ma wyłącznie audytowany dostęp supervisorski.</p></div></div><div className="security-details"><span><Check size={17} /> Wymuszona weryfikacja dwuetapowa administratorów</span><span><Check size={17} /> Rejestr logowań i zmian uprawnień</span><span><Check size={17} /> Izolacja danych między organizacjami</span></div></article>
+          {activeTab === "organization" ? <><article className="settings-card"><div className="settings-card-head"><Globe2 size={21} /><div><h3>Dane organizacji</h3><p>Informacje widoczne w panelu pracowników.</p></div></div><div className="settings-form-grid"><label>Pełna nazwa firmy<input value={legalName} onChange={(event) => setLegalName(event.target.value)} /></label><label>NIP<input value={nip} onChange={(event) => setNip(event.target.value)} /></label><label>Nazwa w panelu<input value={displayName} onChange={(event) => setDisplayName(event.target.value)} /></label><label>Tryb danych<input value={production ? "Dane produkcyjne" : "Demonstracja"} readOnly /></label></div></article><article className="settings-card"><div className="settings-card-head"><Globe2 size={21} /><div><h3>Adres portalu</h3><p>Dedykowany adres logowania dla Twojej firmy.</p></div></div><label className="domain-input"><span>https://</span><input value={organization?.slug || "client231"} readOnly onChange={() => undefined} /><b>.epito.pl</b><button type="button" onClick={() => void copyPortalAddress()} aria-label="Kopiuj adres"><Copy size={17} /></button></label><small className="field-help">Zmiana adresu wymaga kontaktu z administratorem platformy.</small></article></> : null}
+          {activeTab === "appearance" ? <article className="settings-card"><div className="settings-card-head"><Palette size={21} /><div><h3>Wygląd portalu</h3><p>Dopasuj panel do marki swojej firmy. Zmiany są widoczne po zapisaniu.</p></div></div><div className="branding-row"><label className="logo-upload">{organization?.settings?.branding?.logoKey && production ? <img src={`/api/workspace/settings/logo?v=${logoVersion}`} alt="Logo organizacji" /> : <Plus size={20} />}<span>{logoUploading ? "Wgrywanie" : organization?.settings?.branding?.logoKey ? "Zmień logo" : "Dodaj logo"}</span><input type="file" accept="image/png,image/jpeg,image/webp" onChange={uploadLogo} disabled={logoUploading} /></label><label>Kolor akcentu<div className="color-control"><input type="color" value={accentColor} onChange={(event) => setAccentColor(event.target.value.toUpperCase())} /><input value={accentColor} onChange={(event) => setAccentColor(event.target.value.toUpperCase())} maxLength={7} /></div></label><label>Nazwa w nagłówku<input value={headerName} onChange={(event) => setHeaderName(event.target.value)} /></label></div></article> : null}
+          {activeTab === "notifications" ? <article className="settings-card"><div className="settings-card-head"><Bell size={21} /><div><h3>Powiadomienia</h3><p>Określ, jakie wiadomości otrzymuje zespół.</p></div></div><div className="toggle-list"><label><span><strong>Powiadomienia e-mail</strong><small>Nowe dokumenty i wiadomości od biura.</small></span><input type="checkbox" checked={emailNotifications} onChange={() => setEmailNotifications((value) => !value)} /></label><label><span><strong>Przypomnienia o płatnościach</strong><small>Wiadomość 3 dni przed terminem.</small></span><input type="checkbox" checked={paymentReminders} onChange={() => setPaymentReminders((value) => !value)} /></label></div></article> : null}
+          {activeTab === "security" ? <><article className="settings-card security-card"><div className="settings-card-head"><ShieldCheck size={21} /><div><h3>Bezpieczeństwo i nadzór</h3><p>Dostęp supervisorski jest audytowany, a dane organizacji są odseparowane w PostgreSQL.</p></div></div><div className="security-details"><span><Check size={17} /> Rejestr logowań i zmian uprawnień</span><span><Check size={17} /> Izolacja danych między organizacjami</span><span><Check size={17} /> Sesje unieważniane po wylogowaniu</span></div></article><form className="settings-card password-card" onSubmit={changePassword}><div className="settings-card-head"><KeyRound size={21} /><div><h3>Zmień hasło</h3><p>Nowe hasło musi mieć co najmniej 12 znaków, literę i cyfrę.</p></div></div><div className="settings-form-grid"><label>Obecne hasło<input type="password" autoComplete="current-password" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} required /></label><label>Nowe hasło<input type="password" autoComplete="new-password" minLength={12} value={newPassword} onChange={(event) => setNewPassword(event.target.value)} required /></label></div><button className="button button-dark" type="submit" disabled={passwordPending}>{passwordPending ? "Zapisywanie" : "Zmień hasło"}</button></form></> : null}
         </div>
       </div>
     </section>

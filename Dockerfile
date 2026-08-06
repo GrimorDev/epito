@@ -44,3 +44,22 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
   CMD ["node", "-e", "fetch('http://127.0.0.1:3000/api/health').then((response) => { if (!response.ok) process.exit(1) }).catch(() => process.exit(1))"]
 
 CMD ["node", "server.js"]
+
+FROM base AS document_worker
+
+ENV NODE_ENV=production \
+    NEXT_TELEMETRY_DISABLED=1
+
+RUN groupadd --system --gid 1001 nodejs \
+    && useradd --system --uid 1001 --gid nodejs nextjs \
+    && mkdir -p /app/data/uploads \
+    && chown -R nextjs:nodejs /app/data
+
+COPY --from=dependencies /app/node_modules ./node_modules
+COPY --from=builder /app/package.json /app/package-lock.json ./
+COPY --from=builder /app/scripts ./scripts
+RUN npm prune --omit=dev && chown -R nextjs:nodejs /app
+
+USER nextjs
+
+CMD ["node", "scripts/document-worker.mjs"]
