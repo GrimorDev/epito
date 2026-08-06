@@ -1,6 +1,6 @@
 # Epito
 
-Epito to responsywny prototyp portalu klienta dla biur rachunkowych. Zawiera landing page, panel klienta oraz panel właściciela platformy.
+Epito to responsywny prototyp portalu klienta dla biur rachunkowych. Zawiera landing page, panel klienta, panel właściciela platformy oraz produkcyjną podstawę PostgreSQL i Redis dla wdrożeń Docker.
 
 ## Widoki
 
@@ -47,6 +47,10 @@ docker compose up -d
 
 Szczegółowa konfiguracja Portainera, prywatnego GHCR, domeny i aktualizacji znajduje się w [PORTAINER.md](PORTAINER.md).
 
+Stack uruchamia aplikację, PostgreSQL 16, Redis 7 oraz jednorazowy migrator. Bazy nie publikują portów na hoście. PostgreSQL wykorzystuje osobne konto administracyjne i ograniczoną rolę aplikacyjną z wymuszonym RLS, a Redis ma AOF, uwierzytelnianie i trwały wolumen.
+
+Przed pierwszym uruchomieniem trzeba utworzyć trzy pliki sekretów opisane w `PORTAINER.md`.
+
 ## Automatyczne obrazy
 
 Workflow `.github/workflows/docker-publish.yml` buduje obrazy `linux/amd64` i `linux/arm64` po każdym pushu do `main` oraz dla tagów `v*`.
@@ -57,4 +61,4 @@ ghcr.io/grimordev/epito:latest
 
 ## Status produktu
 
-To wersja demonstracyjna interfejsu. Nie należy jeszcze używać jej do przechowywania prawdziwych danych księgowych. Docelowe logowanie B2B, baza danych, trwałe przechowywanie dokumentów, płatności, kopie zapasowe i polityki RODO wymagają implementacji backendu.
+To nadal wersja demonstracyjna interfejsu. Schemat PostgreSQL, RLS, Redis, migracje i mechanizmy bezpieczeństwa są gotowe jako warstwa backendowa, ale formularze panelu nie zapisują jeszcze danych. Docelowe logowanie B2B, magazyn plików, integracje płatnicze, automatyczne backupy i pełne polityki RODO wymagają dalszej implementacji.

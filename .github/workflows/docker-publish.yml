@@ -17,9 +17,14 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
+  verify-backend:
+    name: Verify backend before publishing
+    uses: ./.github/workflows/backend-check.yml
+
   docker:
     name: Publish multi-platform image
     runs-on: ubuntu-latest
+    needs: verify-backend
 
     steps:
       - name: Check out repository

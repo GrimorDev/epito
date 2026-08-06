@@ -1,6 +1,113 @@
 name: epito
 
+x-epito-runtime: &epito-runtime
+  NODE_ENV: production
+  NEXT_TELEMETRY_DISABLED: "1"
+  HOSTNAME: 0.0.0.0
+  PORT: "3000"
+  EPITO_BACKEND_SERVICES: required
+  DATABASE_HOST: postgres
+  DATABASE_PORT: "5432"
+  DATABASE_NAME: ${EPITO_DATABASE_NAME:-epito_prod}
+  DATABASE_USER: epito_app
+  DATABASE_PASSWORD_FILE: /run/secrets/db_password
+  DATABASE_SSL: disable
+  REDIS_HOST: redis
+  REDIS_PORT: "6379"
+  REDIS_PASSWORD_FILE: /run/secrets/redis_password
+
 services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: ${EPITO_POSTGRES_CONTAINER_NAME:-epito-postgres}
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${EPITO_DATABASE_NAME:-epito_prod}
+      POSTGRES_USER: epito_admin
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_admin_password
+      POSTGRES_INITDB_ARGS: --auth-host=scram-sha-256 --data-checksums
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    secrets:
+      - postgres_admin_password
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U epito_admin -d ${EPITO_DATABASE_NAME:-epito_prod}
+      interval: 10s
+      timeout: 5s
+      start_period: 20s
+      retries: 10
+    stop_grace_period: 60s
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - backend-internal
+
+  redis:
+    image: redis:7-alpine
+    container_name: ${EPITO_REDIS_CONTAINER_NAME:-epito-redis}
+    restart: unless-stopped
+    user: redis
+    command:
+      - /bin/sh
+      - -ec
+      - |
+        password="$$(cat /run/secrets/redis_password)"
+        test -n "$$password"
+        exec redis-server \
+          --appendonly yes \
+          --appendfsync everysec \
+          --maxmemory-policy noeviction \
+          --requirepass "$$password"
+    volumes:
+      - redis_data:/data
+    secrets:
+      - redis_password
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - redis-cli --no-auth-warning -a "$$(cat /run/secrets/redis_password)" ping | grep -q PONG
+      interval: 10s
+      timeout: 5s
+      start_period: 10s
+      retries: 10
+    stop_grace_period: 30s
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    networks:
+      - backend-internal
+
+  migrate:
+    image: ${EPITO_IMAGE:-ghcr.io/grimordev/epito:latest}
+    pull_policy: always
+    restart: "no"
+    command:
+      - node
+      - scripts/migrate.mjs
+    environment:
+      <<: *epito-runtime
+      DATABASE_ADMIN_USER: epito_admin
+      DATABASE_ADMIN_PASSWORD_FILE: /run/secrets/postgres_admin_password
+    secrets:
+      - postgres_admin_password
+      - db_password
+      - redis_password
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      disable: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    networks:
+      - backend-internal
+
   epito:
     image: ${EPITO_IMAGE:-ghcr.io/grimordev/epito:latest}
     container_name: ${EPITO_CONTAINER_NAME:-epito}
@@ -10,10 +117,17 @@ services:
     ports:
       - "${EPITO_BIND_ADDRESS:-0.0.0.0}:${EPITO_PORT:-3000}:3000"
     environment:
-      NODE_ENV: production
-      NEXT_TELEMETRY_DISABLED: "1"
-      HOSTNAME: 0.0.0.0
-      PORT: "3000"
+      <<: *epito-runtime
+    secrets:
+      - db_password
+      - redis_password
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     healthcheck:
       test:
         - CMD
@@ -22,15 +136,33 @@ services:
         - "fetch('http://127.0.0.1:3000/api/health').then((response) => { if (!response.ok) process.exit(1) }).catch(() => process.exit(1))"
       interval: 30s
       timeout: 5s
-      start_period: 20s
+      start_period: 30s
       retries: 3
     security_opt:
       - no-new-privileges:true
     cap_drop:
       - ALL
     networks:
-      - epito
+      - frontend
+      - backend-internal
+
+volumes:
+  postgres_data:
+    name: ${EPITO_POSTGRES_VOLUME:-epito-postgres-data}
+  redis_data:
+    name: ${EPITO_REDIS_VOLUME:-epito-redis-data}
+
+secrets:
+  postgres_admin_password:
+    file: ${EPITO_POSTGRES_ADMIN_PASSWORD_FILE:-/opt/epito/secrets/postgres_admin_password}
+  db_password:
+    file: ${EPITO_DB_PASSWORD_FILE:-/opt/epito/secrets/db_password}
+  redis_password:
+    file: ${EPITO_REDIS_PASSWORD_FILE:-/opt/epito/secrets/redis_password}
 
 networks:
-  epito:
+  frontend:
     name: ${EPITO_NETWORK:-epito}
+  backend-internal:
+    name: ${EPITO_BACKEND_NETWORK:-epito-backend-internal}
+    internal: true
