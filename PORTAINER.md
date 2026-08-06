@@ -13,7 +13,7 @@ PostgreSQL i Redis nie publikują portów na hoście. Są dostępne tylko w izol
 
 ## 1. Przygotuj cztery sekrety
 
-Na serwerze Docker utwórz trzy losowe hasła techniczne oraz osobny plik z wybranym hasłem supervisora:
+Na tym samym hoście, na którym działa Docker Engine wybrany jako środowisko w Portainerze, utwórz trzy losowe hasła techniczne oraz osobny plik z wybranym hasłem supervisora. Nie twórz ich wyłącznie wewnątrz kontenera Portainera:
 
 ```bash
 sudo install -d -m 700 /opt/epito/secrets
@@ -22,10 +22,14 @@ openssl rand -base64 48 | sudo tee /opt/epito/secrets/postgres_admin_password >/
 openssl rand -base64 48 | sudo tee /opt/epito/secrets/db_password >/dev/null
 openssl rand -base64 48 | sudo tee /opt/epito/secrets/redis_password >/dev/null
 sudo sh -c 'read -rsp "Hasło supervisora: " value; printf "%s" "$value" > /opt/epito/secrets/supervisor_password; echo'
-sudo chmod 600 /opt/epito/secrets/*
+sudo chmod 644 /opt/epito/secrets/*
+sudo test -s /opt/epito/secrets/postgres_admin_password
+sudo test -s /opt/epito/secrets/db_password
+sudo test -s /opt/epito/secrets/redis_password
+sudo test -s /opt/epito/secrets/supervisor_password
 ```
 
-Hasła nie trafiają do Compose, repozytorium ani zmiennych środowiskowych. `supervisor_password` powinien mieć co najmniej 12 znaków, literę i cyfrę.
+Hasła nie trafiają do Compose, repozytorium ani zmiennych środowiskowych. `supervisor_password` powinien mieć co najmniej 12 znaków, literę i cyfrę. Katalog pozostaje dostępny wyłącznie dla `root` dzięki trybowi `700`. Same pliki mają tryb `644`, ponieważ Docker Compose montuje sekrety plikowe jako bind mount i nie może zmienić ich UID, GID ani trybu; aplikacja i Redis działają w kontenerach bez uprawnień roota i muszą móc je odczytać.
 
 Jeżeli sam Portainer działa w kontenerze, katalog z sekretami musi być widoczny wewnątrz tego kontenera pod tą samą ścieżką. Do konfiguracji kontenera Portainera dodaj bind mount:
 
