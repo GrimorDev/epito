@@ -164,7 +164,7 @@ export default function WorkspacePage() {
             </div>
           </nav>
           <div className={styles.sidebarBottom}>
-            {session?.platformRole === "supervisor" ? <Link className={styles.navItem} href="/supervisor"><ArrowLeft size={21} /> Panel supervisora</Link> : null}
+            {session?.platformRole === "supervisor" ? <Link className={styles.navItem} href="/admin"><ArrowLeft size={21} /> Panel administracyjny</Link> : null}
             <button className={styles.navItem} type="button" onClick={logout}><LogOut size={21} /> Wyloguj się</button>
           </div>
         </aside>
@@ -173,7 +173,7 @@ export default function WorkspacePage() {
           <header className={styles.topbar}>
             <div className={styles.topbarTitle}><strong>{data?.tenant.display_name || session?.tenantName || "Organizacja"}</strong><span>{session?.fullName} · {session?.membershipRole ? roleLabel[session.membershipRole] : "Supervisor"}</span></div>
             <div className={styles.topbarActions}>
-              {session?.platformRole === "supervisor" ? <Link className={styles.buttonGhost} href="/supervisor"><ArrowLeft size={17} /> Organizacje</Link> : null}
+              {session?.platformRole === "supervisor" ? <Link className={styles.buttonGhost} href="/admin"><ArrowLeft size={17} /> Organizacje</Link> : null}
               <button className={`${styles.buttonGhost} ${styles.iconButton}`} type="button" onClick={toggleTheme} aria-label="Zmień motyw">{theme === "light" ? <Moon size={20} /> : <Sun size={20} />}</button>
             </div>
           </header>

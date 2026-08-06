@@ -38,19 +38,25 @@ test("server-renders the Epito landing page with demo and B2B entry points", asy
 });
 
 test("keeps public demo and production data flows explicitly separated", async () => {
-  const [demo, supervisor, workspace, login, compose, migration] = await Promise.all([
+  const [demo, admin, supervisor, workspace, login, authRoute, compose, migration] = await Promise.all([
     readFile(new URL("../app/panel/page.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/admin/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/supervisor/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/workspace/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/logowanie/page.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/auth/login/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../docker-compose.yml", import.meta.url), "utf8"),
     readFile(new URL("../db/postgres/migrations/0002_auth_and_supervisor.sql", import.meta.url), "utf8"),
   ]);
 
   assert.match(demo, /const initialPayments/);
+  assert.match(admin, /supervisor\/page/);
+  assert.doesNotMatch(admin, /seedWorkspaces|const initialPayments/);
   assert.match(supervisor, /\/api\/supervisor\/tenants/);
   assert.match(workspace, /\/api\/workspace\/overview/);
   assert.match(login, /\/api\/auth\/login/);
+  assert.match(login, /router\.push\(payload\.redirectTo\)/);
+  assert.match(authRoute, /platformRole === "supervisor" \? "\/admin"/);
   assert.match(compose, /pull_policy:\s*\$\{EPITO_PULL_POLICY:-build\}/);
   assert.match(compose, /EPITO_PORT:-8063/);
   assert.match(compose, /SUPERVISOR_PASSWORD_FILE:\s*\/run\/secrets\/supervisor_password/);

@@ -72,7 +72,7 @@ https://twoja-domena.pl/logowanie
 
 Logowanie supervisora używa wartości `EPITO_SUPERVISOR_EMAIL` i `EPITO_SUPERVISOR_PASSWORD`. Po zalogowaniu można tworzyć rzeczywiste organizacje oraz pierwsze konta ich właścicieli. Właściciel organizacji może następnie tworzyć klientów i pracowników.
 
-Publiczne `/panel` oraz `/admin` pozostają demonstracją i nie zapisują przykładowych danych do PostgreSQL. Produkcyjne dane są dostępne tylko po logowaniu pod `/workspace` i `/supervisor`.
+Publiczne demo działa wyłącznie pod `/panel` i nie zapisuje przykładowych danych do PostgreSQL. Produkcyjne dane są dostępne po logowaniu pod `/workspace`, a prawdziwy panel właściciela platformy pod `/admin`.
 
 ## 4. Domena i adresy organizacji
 
