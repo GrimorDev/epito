@@ -21,6 +21,7 @@ x-epito-runtime: &epito-runtime
   REDIS_HOST: redis
   REDIS_PORT: "6379"
   REDIS_PASSWORD_FILE: /run/secrets/redis_password
+  EPITO_BASE_DOMAIN: ${EPITO_BASE_DOMAIN:-localhost}
 
 services:
   postgres:
@@ -97,10 +98,13 @@ services:
       <<: *epito-runtime
       DATABASE_ADMIN_USER: epito_admin
       DATABASE_ADMIN_PASSWORD_FILE: /run/secrets/postgres_admin_password
+      SUPERVISOR_EMAIL: ${EPITO_SUPERVISOR_EMAIL:?Set EPITO_SUPERVISOR_EMAIL}
+      SUPERVISOR_PASSWORD_FILE: /run/secrets/supervisor_password
     secrets:
       - postgres_admin_password
       - db_password
       - redis_password
+      - supervisor_password
     depends_on:
       postgres:
         condition: service_healthy
@@ -163,6 +167,8 @@ secrets:
     file: ${EPITO_DB_PASSWORD_FILE:-./secrets/db_password}
   redis_password:
     file: ${EPITO_REDIS_PASSWORD_FILE:-./secrets/redis_password}
+  supervisor_password:
+    file: ${EPITO_SUPERVISOR_PASSWORD_FILE:-./secrets/supervisor_password}
 
 networks:
   frontend:

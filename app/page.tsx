@@ -105,6 +105,7 @@ export default function Home() {
           <a href="#jak-dziala" onClick={() => setMenuOpen(false)}>Jak działa</a>
           <a href="#funkcje" onClick={() => setMenuOpen(false)}>Funkcje</a>
           <a href="#cennik" onClick={() => setMenuOpen(false)}>Cennik</a>
+          <Link href="/logowanie" onClick={() => setMenuOpen(false)}>Logowanie</Link>
           <Link className="button button-small button-dark" href="/panel">Otwórz demo <ArrowRight size={18} /></Link>
         </nav>
       </header>
@@ -278,7 +279,7 @@ export default function Home() {
       <footer className="footer">
         <Link className="brand brand-footer" href="/"><span className="brand-mark" aria-hidden="true">E</span><span><strong>EPITO</strong><small>portal dla biur</small></span></Link>
         <p>Spokojniejsza komunikacja między biurem rachunkowym a klientem.</p>
-        <div><a href="#funkcje">Funkcje</a><a href="#cennik">Cennik</a><Link href="/panel">Demo panelu</Link></div>
+        <div><a href="#funkcje">Funkcje</a><a href="#cennik">Cennik</a><Link href="/panel">Demo panelu</Link><Link href="/logowanie">Logowanie B2B</Link></div>
         <small>© 2026 Epito. Koncepcja demonstracyjna.</small>
       </footer>
     </main>

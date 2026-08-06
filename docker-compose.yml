@@ -1,5 +1,12 @@
 name: epito
 
+x-epito-build: &epito-build
+  build:
+    context: .
+    dockerfile: Dockerfile
+  image: ${EPITO_IMAGE:-epito:server}
+  pull_policy: ${EPITO_PULL_POLICY:-build}
+
 x-epito-runtime: &epito-runtime
   NODE_ENV: production
   NEXT_TELEMETRY_DISABLED: "1"
@@ -15,6 +22,7 @@ x-epito-runtime: &epito-runtime
   REDIS_HOST: redis
   REDIS_PORT: "6379"
   REDIS_PASSWORD_FILE: /run/secrets/redis_password
+  EPITO_BASE_DOMAIN: ${EPITO_BASE_DOMAIN:-localhost}
 
 services:
   postgres:
@@ -82,8 +90,7 @@ services:
       - backend-internal
 
   migrate:
-    image: ${EPITO_IMAGE:-ghcr.io/grimordev/epito:latest}
-    pull_policy: always
+    <<: *epito-build
     restart: "no"
     command:
       - node
@@ -92,10 +99,13 @@ services:
       <<: *epito-runtime
       DATABASE_ADMIN_USER: epito_admin
       DATABASE_ADMIN_PASSWORD_FILE: /run/secrets/postgres_admin_password
+      SUPERVISOR_EMAIL: ${EPITO_SUPERVISOR_EMAIL:?Set EPITO_SUPERVISOR_EMAIL in Portainer}
+      SUPERVISOR_PASSWORD_FILE: /run/secrets/supervisor_password
     secrets:
       - postgres_admin_password
       - db_password
       - redis_password
+      - supervisor_password
     depends_on:
       postgres:
         condition: service_healthy
@@ -109,11 +119,10 @@ services:
       - backend-internal
 
   epito:
-    image: ${EPITO_IMAGE:-ghcr.io/grimordev/epito:latest}
+    <<: *epito-build
     container_name: ${EPITO_CONTAINER_NAME:-epito}
     restart: unless-stopped
     init: true
-    pull_policy: always
     ports:
       - "${EPITO_BIND_ADDRESS:-0.0.0.0}:${EPITO_PORT:-3000}:3000"
     environment:
@@ -159,6 +168,8 @@ secrets:
     file: ${EPITO_DB_PASSWORD_FILE:-/opt/epito/secrets/db_password}
   redis_password:
     file: ${EPITO_REDIS_PASSWORD_FILE:-/opt/epito/secrets/redis_password}
+  supervisor_password:
+    file: ${EPITO_SUPERVISOR_PASSWORD_FILE:-/opt/epito/secrets/supervisor_password}
 
 networks:
   frontend:

@@ -1,17 +1,19 @@
 # Wdrożenie Epito w Portainerze
 
-Stack uruchamia cztery usługi:
+Domyślny stack buduje aplikację bezpośrednio z repozytorium. Nie pobiera prywatnego obrazu `ghcr.io/grimordev/epito:latest`, dlatego nie występuje błąd `denied` podczas odczytu manifestu GHCR.
 
-- `epito` — aplikacja Next.js,
-- `postgres` — PostgreSQL 16 z trwałym wolumenem,
-- `redis` — Redis 7 z AOF i trwałym wolumenem,
-- `migrate` — jednorazowa migracja schematu i ograniczonej roli `epito_app`.
+Stack uruchamia:
 
-PostgreSQL i Redis działają wyłącznie w izolowanej sieci `backend-internal`. Nie mają opublikowanych portów na hoście.
+- `epito` — aplikację Next.js z logowaniem B2B,
+- `postgres` — PostgreSQL 16 z trwałym wolumenem i RLS,
+- `redis` — Redis 7 z AOF dla sesji, rate limitingu i kolejek,
+- `migrate` — migracje oraz bezpieczne utworzenie konta supervisora.
 
-## 1. Przygotowanie sekretów na serwerze
+PostgreSQL i Redis nie publikują portów na hoście. Są dostępne tylko w izolowanej sieci `backend-internal`.
 
-Na serwerze z Dockerem utwórz katalog dostępny dla Portainera i trzy niezależne hasła:
+## 1. Przygotuj cztery sekrety
+
+Na serwerze Docker utwórz trzy losowe hasła techniczne oraz osobny plik z wybranym hasłem supervisora:
 
 ```bash
 sudo install -d -m 700 /opt/epito/secrets
@@ -19,101 +21,99 @@ umask 077
 openssl rand -base64 48 | sudo tee /opt/epito/secrets/postgres_admin_password >/dev/null
 openssl rand -base64 48 | sudo tee /opt/epito/secrets/db_password >/dev/null
 openssl rand -base64 48 | sudo tee /opt/epito/secrets/redis_password >/dev/null
+sudo sh -c 'read -rsp "Hasło supervisora: " value; printf "%s" "$value" > /opt/epito/secrets/supervisor_password; echo'
 sudo chmod 600 /opt/epito/secrets/*
 ```
 
-- `postgres_admin_password` służy wyłącznie migracjom i administracji bazą.
-- `db_password` należy do ograniczonej roli aplikacyjnej `epito_app`.
-- `redis_password` chroni sesje, OTP, rate limiting i kolejki.
+Hasła nie trafiają do Compose, repozytorium ani zmiennych środowiskowych. `supervisor_password` powinien mieć co najmniej 12 znaków, literę i cyfrę.
 
-Nie wpisuj haseł do Compose, repozytorium ani zmiennych środowiskowych aplikacji. Kontenery odczytują je z plików zamontowanych jako sekrety.
+## 2. Dodaj stack z prywatnego repozytorium
 
-## 2. Dostęp Portainera do repozytorium i GHCR
+W Portainerze wybierz:
 
-Repozytorium oraz obraz są prywatne. W Portainerze dodaj rejestr `ghcr.io` z użytkownikiem `GrimorDev` i tokenem GitHub mającym `read:packages`.
+1. `Stacks` → `Add stack`.
+2. Metodę `Repository`, nie `Web editor`.
+3. Adres `https://github.com/GrimorDev/epito.git`.
+4. Uwierzytelnienie GitHub do odczytu prywatnego repozytorium.
+5. Gałąź `refs/heads/main`.
+6. Compose path `docker-compose.yml`.
 
-Repozytorium stacka:
+Portainer musi klonować repozytorium, ponieważ kontekst `build: .` zawiera kod aplikacji i Dockerfile.
+
+## 3. Ustaw zmienne stacka
+
+W sekcji `Environment variables` ustaw co najmniej:
+
+| Zmienna | Wartość |
+| --- | --- |
+| `EPITO_SUPERVISOR_EMAIL` | adres e-mail właściciela platformy |
+| `EPITO_BASE_DOMAIN` | produkcyjna domena bazowa, na przykład `epito.pl` |
+| `EPITO_PORT` | port hosta, domyślnie `3000` |
+
+Pozostałe wartości mają bezpieczne ustawienia domyślne:
+
+| Zmienna | Domyślna wartość |
+| --- | --- |
+| `EPITO_IMAGE` | `epito:server` |
+| `EPITO_PULL_POLICY` | `build` |
+| `EPITO_DATABASE_NAME` | `epito_prod` |
+| `EPITO_NETWORK` | `epito` |
+| `EPITO_BACKEND_NETWORK` | `epito-backend-internal` |
+| `EPITO_POSTGRES_ADMIN_PASSWORD_FILE` | `/opt/epito/secrets/postgres_admin_password` |
+| `EPITO_DB_PASSWORD_FILE` | `/opt/epito/secrets/db_password` |
+| `EPITO_REDIS_PASSWORD_FILE` | `/opt/epito/secrets/redis_password` |
+| `EPITO_SUPERVISOR_PASSWORD_FILE` | `/opt/epito/secrets/supervisor_password` |
+
+Nie ustawiaj `EPITO_IMAGE` na adres GHCR, dopóki rejestr i uprawnienie `read:packages` nie są poprawnie skonfigurowane.
+
+## 4. Uruchom i sprawdź
+
+Kliknij `Deploy the stack`. Pierwszy build może potrwać kilka minut. Kolejność startu jest kontrolowana przez healthchecki:
+
+1. PostgreSQL inicjalizuje bazę z SCRAM-SHA-256 i checksumami stron.
+2. Migrator tworzy schemat, ograniczoną rolę `epito_app`, RLS i konto supervisora.
+3. Redis przechodzi healthcheck.
+4. Epito uruchamia aplikację.
+
+Sprawdź:
 
 ```text
-https://github.com/GrimorDev/epito.git
+https://twoja-domena.pl/api/health
+https://twoja-domena.pl/logowanie
 ```
 
-Do klonowania prywatnego repozytorium użyj poświadczeń GitHub tylko do odczytu.
+Logowanie supervisora używa e-maila ze zmiennej `EPITO_SUPERVISOR_EMAIL` i hasła z pliku `supervisor_password`. Po zalogowaniu można tworzyć rzeczywiste organizacje oraz pierwsze konta ich właścicieli. Właściciel organizacji może następnie tworzyć klientów i pracowników.
 
-## 3. Utworzenie stacka
+Publiczne `/panel` oraz `/admin` pozostają demonstracją i nie zapisują przykładowych danych do PostgreSQL. Produkcyjne dane są dostępne tylko po logowaniu pod `/workspace` i `/supervisor`.
 
-W Portainerze wybierz `Stacks`, następnie `Add stack`, metodę `Repository` oraz plik `docker-compose.yml`. Domyślne ścieżki sekretów wskazują na `/opt/epito/secrets`.
+## 5. Domena i adresy organizacji
 
-Najważniejsze opcjonalne zmienne:
+Reverse proxy, na przykład Traefik, Nginx Proxy Manager lub Caddy, powinno przekazywać ruch do `http://epito:3000` i ustawiać nagłówki `Host`, `X-Forwarded-Host` oraz `X-Forwarded-Proto`.
 
-| Zmienna | Domyślna wartość | Znaczenie |
-| --- | --- | --- |
-| `EPITO_IMAGE` | `ghcr.io/grimordev/epito:latest` | Obraz aplikacji i migratora |
-| `EPITO_PORT` | `3000` | Port aplikacji na hoście |
-| `EPITO_DATABASE_NAME` | `epito_prod` | Nazwa bazy PostgreSQL |
-| `EPITO_NETWORK` | `epito` | Sieć aplikacji i reverse proxy |
-| `EPITO_BACKEND_NETWORK` | `epito-backend-internal` | Izolowana sieć baz |
-| `EPITO_POSTGRES_ADMIN_PASSWORD_FILE` | `/opt/epito/secrets/postgres_admin_password` | Plik hasła administratora |
-| `EPITO_DB_PASSWORD_FILE` | `/opt/epito/secrets/db_password` | Plik hasła aplikacji |
-| `EPITO_REDIS_PASSWORD_FILE` | `/opt/epito/secrets/redis_password` | Plik hasła Redis |
+Dla adresów w formacie `klient.epito.pl` dodaj certyfikat wildcard `*.epito.pl` oraz wildcard DNS kierujący na serwer. `EPITO_BASE_DOMAIN` służy do prezentowania właściwych adresów w panelu supervisora.
 
-Przy pierwszym wdrożeniu PostgreSQL inicjalizuje klaster z SCRAM-SHA-256 i checksumami stron. Następnie `migrate` tworzy schemat, rolę `epito_app`, klucze obce, indeksy JSONB oraz polityki RLS. Aplikacja startuje dopiero po poprawnym zakończeniu migracji i przejściu healthchecków PostgreSQL oraz Redis.
+## 6. RLS i wielofirmowość
 
-Endpoint `GET /api/health` zwraca stan aplikacji i obu zależności. Nie ujawnia adresów, haseł ani komunikatów błędów bazy.
+Operacje organizacji działają w transakcji ustawiającej `app.current_tenant_id` i `app.current_user_id`. Polityki PostgreSQL blokują odczyt oraz zapis między organizacjami. Rola `epito_app` nie jest superużytkownikiem, właścicielem tabel ani rolą `BYPASSRLS`. Kontrolowane operacje supervisora są audytowane.
 
-## 4. RLS i wielofirmowość
+## 7. Kopie zapasowe
 
-Każda operacja na danych firmy musi być wykonana przez helper `withTenantTransaction`. Ustawia on lokalnie dla transakcji:
-
-```text
-app.current_tenant_id
-app.current_user_id
-```
-
-Polityki PostgreSQL filtrują dane po `tenant_id`. Rola `epito_app` nie jest właścicielem tabel, superużytkownikiem ani rolą `BYPASSRLS`. Panel właściciela platformy powinien korzystać z kontrolowanych operacji serwerowych i rejestrować działania w `audit_log`, a nie wyłączać RLS.
-
-## 5. Redis
-
-Redis ma włączone:
-
-- `appendonly yes`,
-- `appendfsync everysec`,
-- politykę `noeviction`, która nie usuwa samoczynnie sesji ani zadań,
-- uwierzytelnianie hasłem z sekretu,
-- trwały wolumen `epito-redis-data`.
-
-Kod aplikacji zawiera rate limiting, OTP z TTL, unieważnianie sesji oraz kolejki BullMQ dla powiadomień, dokumentów i integracji.
-
-## 6. Domena i HTTPS
-
-Reverse proxy, na przykład Traefik, Nginx Proxy Manager albo Caddy, powinno przekazywać ruch do `http://epito:3000` i ustawiać `Host`, `X-Forwarded-Host` oraz `X-Forwarded-Proto`. Dołącz proxy do sieci określonej przez `EPITO_NETWORK`.
-
-## 7. Kopie zapasowe PostgreSQL
-
-Przykładowy ręczny backup w formacie kompresowanym:
+Przykładowy backup PostgreSQL:
 
 ```bash
 docker exec epito-postgres sh -c 'PGPASSWORD="$(cat /run/secrets/postgres_admin_password)" pg_dump -U epito_admin -d epito_prod -Fc' > epito-$(date +%F-%H%M).dump
 ```
 
-Backupy przechowuj poza VPS-em i regularnie testuj ich odtwarzanie. Wolumen nie jest kopią zapasową.
+Przechowuj kopie poza VPS-em i regularnie testuj odtwarzanie. Wolumen nie jest kopią zapasową.
 
-## 8. Aktualizacje
+## 8. Aktualizacja
 
-Każdy push do `main` publikuje nowy obraz `latest`. W Portainerze wybierz `Pull latest image and redeploy`. Migrator jest idempotentny: pomija wykonane migracje i zatrzymuje wdrożenie, jeśli wcześniej zastosowany plik SQL został zmieniony.
+W stacku opartym na repozytorium użyj `Pull and redeploy`. Portainer pobierze nowy commit i przebuduje obraz lokalnie. Migrator pomija zastosowane migracje i zatrzymuje wdrożenie, jeżeli historyczny plik migracji został zmieniony.
 
-## Build bez GHCR
+## Lokalny build
 
-Do lokalnego buildu służy:
+Utwórz cztery pliki w `secrets/`, ustaw `EPITO_SUPERVISOR_EMAIL` i uruchom:
 
 ```bash
-mkdir -p secrets
-openssl rand -base64 48 > secrets/postgres_admin_password
-openssl rand -base64 48 > secrets/db_password
-openssl rand -base64 48 > secrets/redis_password
 docker compose -f docker-compose.local.yml up -d --build
 ```
-
-## Aktualny zakres produktu
-
-Infrastruktura PostgreSQL, Redis, migracje, RLS i bezpieczne połączenia są przygotowane. Widoki demonstracyjne nadal korzystają z przykładowych danych w interfejsie. Przed obsługą prawdziwych klientów trzeba podłączyć formularze i operacje panelu do API, wdrożyć logowanie B2B oraz obiektowy magazyn plików z szyfrowaniem i polityką retencji.
