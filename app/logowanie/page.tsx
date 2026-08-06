@@ -32,7 +32,7 @@ export default function LoginPage() {
   }
 
   return (
-    <main className={styles.loginShell}>
+    <main className={`${styles.shell} ${styles.loginShell}`} data-theme="light">
       <section className={styles.loginIntro}>
         <div>
           <Link className={styles.brand} href="/" aria-label="Epito, strona główna">

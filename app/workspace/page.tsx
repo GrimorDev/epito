@@ -30,10 +30,12 @@ type Overview = {
   tenant: { id: string; slug: string; display_name: string; legal_name: string; nip: string | null };
   companies: Array<{ id: string; name: string; nip: string | null; email: string | null; phone: string | null; status: string; created_at: string; documents_count: number; payments_count: number }>;
   team: Array<{ id: string; email: string; full_name: string; role: string; status: string }>;
+  documents: Array<{ id: string; name: string; category: string; status: string; document_year: number; document_month: number; amount: string | null; currency: string; company_name: string; created_at: string }>;
+  payments: Array<{ id: string; tax_type: string; period_label: string; amount: string; currency: string; due_date: string; status: string; company_name: string; created_at: string }>;
   stats: { clients_count: number; documents_count: number; payments_due_count: number; payments_due_total: string };
 };
 
-type Tab = "overview" | "clients" | "team";
+type Tab = "overview" | "clients" | "team" | "documents" | "payments" | "settings";
 
 const roleLabel: Record<string, string> = {
   owner: "Właściciel",
@@ -41,6 +43,24 @@ const roleLabel: Record<string, string> = {
   accountant: "Księgowy",
   employee: "Pracownik",
   viewer: "Podgląd",
+};
+
+const tabLabel: Record<Tab, string> = {
+  overview: "Pulpit organizacji",
+  clients: "Klienci biura",
+  team: "Zespół",
+  documents: "Dokumenty",
+  payments: "Płatności",
+  settings: "Ustawienia organizacji",
+};
+
+const paymentTypeLabel: Record<string, string> = {
+  vat: "VAT",
+  pit: "PIT",
+  cit: "CIT",
+  zus: "ZUS",
+  invoice: "Faktura",
+  other: "Inna płatność",
 };
 
 export default function WorkspacePage() {
@@ -52,8 +72,12 @@ export default function WorkspacePage() {
   const [theme, setTheme] = useState<"light" | "dark">("light");
   const [clientPending, setClientPending] = useState(false);
   const [teamPending, setTeamPending] = useState(false);
+  const [paymentPending, setPaymentPending] = useState(false);
+  const [settingsPending, setSettingsPending] = useState(false);
   const [clientMessage, setClientMessage] = useState("");
   const [teamMessage, setTeamMessage] = useState("");
+  const [paymentMessage, setPaymentMessage] = useState("");
+  const [settingsMessage, setSettingsMessage] = useState("");
 
   const loadOverview = useCallback(async () => {
     const response = await fetch("/api/workspace/overview", { cache: "no-store" });
@@ -94,54 +118,68 @@ export default function WorkspacePage() {
     router.replace("/logowanie");
   }
 
-  async function createClient(event: FormEvent<HTMLFormElement>) {
+  async function submitForm(
+    event: FormEvent<HTMLFormElement>,
+    endpoint: string,
+    setPending: (value: boolean) => void,
+    setMessage: (value: string) => void,
+    successMessage: string,
+  ) {
     event.preventDefault();
     const formElement = event.currentTarget;
-    setClientPending(true);
-    setClientMessage("");
+    setPending(true);
+    setMessage("");
     try {
-      const response = await fetch("/api/workspace/clients", {
+      const response = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(Object.fromEntries(new FormData(formElement).entries())),
       });
       const payload = (await response.json()) as { error?: string };
-      if (!response.ok) throw new Error(payload.error || "Nie udało się dodać klienta.");
+      if (!response.ok) throw new Error(payload.error || "Nie udało się zapisać danych.");
       formElement.reset();
-      setClientMessage("Klient został dodany.");
+      setMessage(successMessage);
       await loadOverview();
     } catch (reason) {
-      setClientMessage(reason instanceof Error ? reason.message : "Nie udało się dodać klienta.");
+      setMessage(reason instanceof Error ? reason.message : "Nie udało się zapisać danych.");
     } finally {
-      setClientPending(false);
+      setPending(false);
     }
   }
 
-  async function createTeamMember(event: FormEvent<HTMLFormElement>) {
+  async function saveSettings(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const formElement = event.currentTarget;
-    setTeamPending(true);
-    setTeamMessage("");
+    setSettingsPending(true);
+    setSettingsMessage("");
     try {
-      const response = await fetch("/api/workspace/team", {
-        method: "POST",
+      const response = await fetch("/api/workspace/settings", {
+        method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(Object.fromEntries(new FormData(formElement).entries())),
+        body: JSON.stringify(Object.fromEntries(new FormData(event.currentTarget).entries())),
       });
       const payload = (await response.json()) as { error?: string };
-      if (!response.ok) throw new Error(payload.error || "Nie udało się dodać pracownika.");
-      formElement.reset();
-      setTeamMessage("Konto pracownika zostało utworzone.");
+      if (!response.ok) throw new Error(payload.error || "Nie udało się zapisać ustawień.");
+      setSettingsMessage("Ustawienia zostały zapisane.");
       await loadOverview();
     } catch (reason) {
-      setTeamMessage(reason instanceof Error ? reason.message : "Nie udało się dodać pracownika.");
+      setSettingsMessage(reason instanceof Error ? reason.message : "Nie udało się zapisać ustawień.");
     } finally {
-      setTeamPending(false);
+      setSettingsPending(false);
     }
   }
 
   const canCreateClients = session?.platformRole === "supervisor" || ["owner", "admin", "accountant"].includes(session?.membershipRole || "");
   const canManageTeam = session?.platformRole === "supervisor" || ["owner", "admin"].includes(session?.membershipRole || "");
+  const canManageSettings = session?.platformRole === "supervisor" || ["owner", "admin"].includes(session?.membershipRole || "");
+
+  const navigation: Array<{ id: Tab; label: string; icon: typeof LayoutDashboard }> = [
+    { id: "overview", label: "Pulpit", icon: LayoutDashboard },
+    { id: "clients", label: "Klienci", icon: Building2 },
+    { id: "team", label: "Zespół", icon: Users },
+    { id: "documents", label: "Dokumenty", icon: FileText },
+    { id: "payments", label: "Płatności", icon: WalletCards },
+    { id: "settings", label: "Ustawienia", icon: Settings },
+  ];
 
   return (
     <div className={styles.shell} data-theme={theme}>
@@ -155,12 +193,10 @@ export default function WorkspacePage() {
           <nav>
             <p className={styles.navLabel}>Organizacja</p>
             <div className={styles.navList}>
-              <button className={tab === "overview" ? styles.navItemActive : styles.navItem} type="button" onClick={() => setTab("overview")}><LayoutDashboard size={21} /> Pulpit</button>
-              <button className={tab === "clients" ? styles.navItemActive : styles.navItem} type="button" onClick={() => setTab("clients")}><Building2 size={21} /> Klienci</button>
-              <button className={tab === "team" ? styles.navItemActive : styles.navItem} type="button" onClick={() => setTab("team")}><Users size={21} /> Zespół</button>
-              <span className={styles.navItem}><FileText size={21} /> Dokumenty</span>
-              <span className={styles.navItem}><WalletCards size={21} /> Płatności</span>
-              <span className={styles.navItem}><Settings size={21} /> Ustawienia</span>
+              {navigation.map((item) => {
+                const Icon = item.icon;
+                return <button key={item.id} className={tab === item.id ? styles.navItemActive : styles.navItem} type="button" onClick={() => setTab(item.id)}><Icon size={21} /> {item.label}</button>;
+              })}
             </div>
           </nav>
           <div className={styles.sidebarBottom}>
@@ -181,14 +217,17 @@ export default function WorkspacePage() {
           {loading || !data ? <div className={styles.loading}>Ładowanie danych organizacji…</div> : (
             <div className={styles.content}>
               <div className={styles.headingRow}>
-                <div><h1>{tab === "overview" ? "Pulpit organizacji" : tab === "clients" ? "Klienci biura" : "Zespół"}</h1><p>{data.tenant.legal_name}{data.tenant.nip ? ` · NIP ${data.tenant.nip}` : ""}</p></div>
+                <div><h1>{tabLabel[tab]}</h1><p>{data.tenant.legal_name}{data.tenant.nip ? ` · NIP ${data.tenant.nip}` : ""}</p></div>
                 {tab === "clients" && canCreateClients ? <button className={styles.buttonPrimary} type="button" onClick={() => document.getElementById("new-client")?.scrollIntoView({ behavior: "smooth" })}><Plus size={18} /> Dodaj klienta</button> : null}
               </div>
 
-              <div className={styles.tabs}>
+              <div className={styles.tabs} aria-label="Działy organizacji">
                 <button className={tab === "overview" ? styles.tabActive : styles.tab} type="button" onClick={() => setTab("overview")}>Przegląd</button>
                 <button className={tab === "clients" ? styles.tabActive : styles.tab} type="button" onClick={() => setTab("clients")}>Klienci ({data.companies.length})</button>
                 <button className={tab === "team" ? styles.tabActive : styles.tab} type="button" onClick={() => setTab("team")}>Zespół ({data.team.length})</button>
+                <button className={tab === "documents" ? styles.tabActive : styles.tab} type="button" onClick={() => setTab("documents")}>Dokumenty ({data.documents.length})</button>
+                <button className={tab === "payments" ? styles.tabActive : styles.tab} type="button" onClick={() => setTab("payments")}>Płatności ({data.payments.length})</button>
+                <button className={tab === "settings" ? styles.tabActive : styles.tab} type="button" onClick={() => setTab("settings")}>Ustawienia</button>
               </div>
 
               {tab === "overview" ? (
@@ -197,7 +236,7 @@ export default function WorkspacePage() {
                     <article className={styles.statCard}><span className={styles.statIcon}><Building2 size={21} /></span><strong>{data.stats.clients_count}</strong><span>aktywnych klientów</span></article>
                     <article className={styles.statCard}><span className={styles.statIcon}><FileText size={21} /></span><strong>{data.stats.documents_count}</strong><span>dokumentów</span></article>
                     <article className={styles.statCard}><span className={styles.statIcon}><WalletCards size={21} /></span><strong>{data.stats.payments_due_count}</strong><span>płatności do obsługi</span></article>
-                    <article className={styles.statCard}><span className={styles.statIcon}><WalletCards size={21} /></span><strong>{Number(data.stats.payments_due_total).toLocaleString("pl-PL", { style: "currency", currency: "PLN" })}</strong><span>pozostało do zapłaty</span></article>
+                    <article className={styles.statCard}><span className={styles.statIcon}><WalletCards size={21} /></span><strong>{formatMoney(data.stats.payments_due_total, "PLN")}</strong><span>pozostało do zapłaty</span></article>
                   </section>
                   <section className={styles.panel}>
                     <header className={styles.panelHeader}><div><h2>Ostatnio dodani klienci</h2><p>Dane pobierane bezpośrednio z PostgreSQL.</p></div><button className={styles.buttonGhost} type="button" onClick={() => setTab("clients")}>Pokaż wszystkich</button></header>
@@ -215,12 +254,12 @@ export default function WorkspacePage() {
                   {canCreateClients ? (
                     <section className={`${styles.panel} ${styles.formPanel}`} id="new-client">
                       <h2>Nowy klient</h2><p>Dodaj prawdziwą firmę do bieżącej organizacji.</p>
-                      <form className={styles.singleForm} onSubmit={createClient}>
+                      <form className={styles.singleForm} onSubmit={(event) => submitForm(event, "/api/workspace/clients", setClientPending, setClientMessage, "Klient został dodany.")}>
                         <div className={styles.field}><label htmlFor="clientName">Nazwa firmy</label><input id="clientName" name="name" required maxLength={180} /></div>
                         <div className={styles.field}><label htmlFor="clientNip">NIP</label><input id="clientNip" name="nip" inputMode="numeric" maxLength={10} /></div>
                         <div className={styles.field}><label htmlFor="clientEmail">E-mail</label><input id="clientEmail" name="email" type="email" maxLength={254} /></div>
                         <div className={styles.field}><label htmlFor="clientPhone">Telefon</label><input id="clientPhone" name="phone" type="tel" maxLength={40} /></div>
-                        {clientMessage ? <div className={clientMessage.includes("został") ? styles.success : styles.error}>{clientMessage}</div> : null}
+                        <FormMessage message={clientMessage} />
                         <button className={styles.buttonPrimary} type="submit" disabled={clientPending}>{clientPending ? "Dodaję klienta…" : "Dodaj klienta"}</button>
                       </form>
                     </section>
@@ -237,16 +276,66 @@ export default function WorkspacePage() {
                   {canManageTeam ? (
                     <section className={`${styles.panel} ${styles.formPanel}`}>
                       <h2>Nowy pracownik</h2><p>Utwórz konto i przypisz rolę w organizacji.</p>
-                      <form className={styles.singleForm} onSubmit={createTeamMember}>
+                      <form className={styles.singleForm} onSubmit={(event) => submitForm(event, "/api/workspace/team", setTeamPending, setTeamMessage, "Konto pracownika zostało utworzone.")}>
                         <div className={styles.field}><label htmlFor="fullName">Imię i nazwisko</label><input id="fullName" name="fullName" required maxLength={120} /></div>
                         <div className={styles.field}><label htmlFor="teamEmail">E-mail</label><input id="teamEmail" name="email" type="email" required maxLength={254} /></div>
                         <div className={styles.field}><label htmlFor="role">Rola</label><select id="role" name="role" defaultValue="employee"><option value="admin">Administrator</option><option value="accountant">Księgowy</option><option value="employee">Pracownik</option><option value="viewer">Tylko podgląd</option></select></div>
                         <div className={styles.field}><label htmlFor="teamPassword">Hasło startowe</label><input id="teamPassword" name="password" type="password" required minLength={12} maxLength={256} autoComplete="new-password" /><small>Minimum 12 znaków, litera i cyfra.</small></div>
-                        {teamMessage ? <div className={teamMessage.includes("zostało") ? styles.success : styles.error}>{teamMessage}</div> : null}
+                        <FormMessage message={teamMessage} />
                         <button className={styles.buttonPrimary} type="submit" disabled={teamPending}>{teamPending ? "Tworzę konto…" : "Utwórz konto"}</button>
                       </form>
                     </section>
                   ) : null}
+                </div>
+              ) : null}
+
+              {tab === "documents" ? (
+                <section className={styles.panel}>
+                  <header className={styles.panelHeader}><div><h2>Dokumenty klientów</h2><p>Lista dokumentów zapisanych dla bieżącej organizacji.</p></div></header>
+                  {data.documents.length ? <DocumentsTable documents={data.documents} /> : <Empty title="Brak dokumentów" text="Dokumenty pojawią się tutaj po imporcie lub synchronizacji z systemem księgowym." />}
+                </section>
+              ) : null}
+
+              {tab === "payments" ? (
+                <div className={styles.twoColumns}>
+                  <section className={styles.panel}>
+                    <header className={styles.panelHeader}><div><h2>Rozliczenia i terminy</h2><p>Rzeczywiste zobowiązania klientów zapisane w PostgreSQL.</p></div></header>
+                    {data.payments.length ? <PaymentsTable payments={data.payments} /> : <Empty title="Brak płatności" text="Dodaj pierwszą płatność dla klienta, aby rozpocząć pilnowanie terminów." />}
+                  </section>
+                  {canCreateClients ? (
+                    <section className={`${styles.panel} ${styles.formPanel}`}>
+                      <h2>Nowa płatność</h2><p>Dodaj kwotę i termin widoczny dla klienta.</p>
+                      <form className={styles.singleForm} onSubmit={(event) => submitForm(event, "/api/workspace/payments", setPaymentPending, setPaymentMessage, "Płatność została dodana.")}>
+                        <div className={styles.field}><label htmlFor="paymentCompany">Klient</label><select id="paymentCompany" name="clientCompanyId" required defaultValue=""><option value="" disabled>Wybierz firmę</option>{data.companies.map((company) => <option key={company.id} value={company.id}>{company.name}</option>)}</select></div>
+                        <div className={styles.field}><label htmlFor="taxType">Rodzaj</label><select id="taxType" name="taxType" defaultValue="vat"><option value="vat">VAT</option><option value="pit">PIT</option><option value="cit">CIT</option><option value="zus">ZUS</option><option value="invoice">Faktura</option><option value="other">Inna płatność</option></select></div>
+                        <div className={styles.field}><label htmlFor="periodLabel">Okres</label><input id="periodLabel" name="periodLabel" required maxLength={80} placeholder="np. lipiec 2026" /></div>
+                        <div className={styles.field}><label htmlFor="amount">Kwota</label><input id="amount" name="amount" required type="number" min="0.01" step="0.01" inputMode="decimal" /></div>
+                        <div className={styles.field}><label htmlFor="dueDate">Termin płatności</label><input id="dueDate" name="dueDate" required type="date" /></div>
+                        <FormMessage message={paymentMessage} />
+                        {!data.companies.length ? <div className={styles.error}>Najpierw dodaj klienta biura.</div> : null}
+                        <button className={styles.buttonPrimary} type="submit" disabled={paymentPending || !data.companies.length}>{paymentPending ? "Dodaję płatność…" : "Dodaj płatność"}</button>
+                      </form>
+                    </section>
+                  ) : null}
+                </div>
+              ) : null}
+
+              {tab === "settings" ? (
+                <div className={styles.twoColumns}>
+                  <section className={`${styles.panel} ${styles.formPanel}`}>
+                    <h2>Dane organizacji</h2><p>Informacje widoczne w panelu zespołu.</p>
+                    {canManageSettings ? (
+                      <form key={`${data.tenant.display_name}-${data.tenant.legal_name}-${data.tenant.nip || ""}`} className={styles.singleForm} onSubmit={saveSettings}>
+                        <div className={styles.field}><label htmlFor="settingsDisplayName">Nazwa w panelu</label><input id="settingsDisplayName" name="displayName" required maxLength={100} defaultValue={data.tenant.display_name} /></div>
+                        <div className={styles.field}><label htmlFor="settingsLegalName">Pełna nazwa firmy</label><input id="settingsLegalName" name="legalName" required maxLength={180} defaultValue={data.tenant.legal_name} /></div>
+                        <div className={styles.field}><label htmlFor="settingsNip">NIP</label><input id="settingsNip" name="nip" inputMode="numeric" maxLength={10} defaultValue={data.tenant.nip || ""} /></div>
+                        <div className={styles.field}><label>Adres organizacji</label><input value={data.tenant.slug} readOnly aria-readonly="true" /><small>Zmiana adresu wymaga kontaktu z administratorem platformy.</small></div>
+                        <FormMessage message={settingsMessage} />
+                        <button className={styles.buttonPrimary} type="submit" disabled={settingsPending}>{settingsPending ? "Zapisuję…" : "Zapisz ustawienia"}</button>
+                      </form>
+                    ) : <div className={styles.readOnlyNotice}>Te ustawienia może zmienić właściciel lub administrator organizacji.</div>}
+                  </section>
+                  <PasswordForm />
                 </div>
               ) : null}
             </div>
@@ -260,6 +349,53 @@ export default function WorkspacePage() {
 function CompaniesTable({ companies }: { companies: Overview["companies"] }) {
   if (!companies.length) return <Empty title="Brak klientów" text="Dodaj pierwszą firmę, aby rozpocząć pracę na rzeczywistych danych." />;
   return <div className={styles.tableWrap}><table className={styles.table}><thead><tr><th>Firma</th><th>Kontakt</th><th>Dokumenty</th><th>Płatności</th><th>Status</th></tr></thead><tbody>{companies.map((company) => <tr key={company.id}><td><strong>{company.name}</strong><small>{company.nip ? `NIP ${company.nip}` : "Bez NIP"}</small></td><td>{company.email || company.phone || "Nie podano"}</td><td>{company.documents_count}</td><td>{company.payments_count}</td><td><span className={styles.status}>{company.status === "active" ? "Aktywny" : company.status}</span></td></tr>)}</tbody></table></div>;
+}
+
+function DocumentsTable({ documents }: { documents: Overview["documents"] }) {
+  return <div className={styles.tableWrap}><table className={styles.table}><thead><tr><th>Dokument</th><th>Klient</th><th>Okres</th><th>Kategoria</th><th>Kwota</th><th>Status</th></tr></thead><tbody>{documents.map((document) => <tr key={document.id}><td><strong>{document.name}</strong><small>Dodano {new Date(document.created_at).toLocaleDateString("pl-PL")}</small></td><td>{document.company_name}</td><td>{String(document.document_month).padStart(2, "0")}.{document.document_year}</td><td>{document.category}</td><td>{document.amount ? formatMoney(document.amount, document.currency) : "—"}</td><td><span className={styles.status}>{document.status}</span></td></tr>)}</tbody></table></div>;
+}
+
+function PaymentsTable({ payments }: { payments: Overview["payments"] }) {
+  return <div className={styles.tableWrap}><table className={styles.table}><thead><tr><th>Płatność</th><th>Klient</th><th>Okres</th><th>Termin</th><th>Kwota</th><th>Status</th></tr></thead><tbody>{payments.map((payment) => <tr key={payment.id}><td><strong>{paymentTypeLabel[payment.tax_type] || payment.tax_type}</strong></td><td>{payment.company_name}</td><td>{payment.period_label}</td><td>{new Date(`${payment.due_date}T00:00:00`).toLocaleDateString("pl-PL")}</td><td><strong>{formatMoney(payment.amount, payment.currency)}</strong></td><td><span className={styles.status}>{payment.status === "due" ? "Do zapłaty" : payment.status}</span></td></tr>)}</tbody></table></div>;
+}
+
+function PasswordForm() {
+  const [pending, setPending] = useState(false);
+  const [message, setMessage] = useState("");
+
+  async function changePassword(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const formElement = event.currentTarget;
+    setPending(true);
+    setMessage("");
+    try {
+      const response = await fetch("/api/auth/password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(Object.fromEntries(new FormData(formElement).entries())),
+      });
+      const payload = (await response.json()) as { error?: string };
+      if (!response.ok) throw new Error(payload.error || "Nie udało się zmienić hasła.");
+      formElement.reset();
+      setMessage("Hasło zostało zmienione.");
+    } catch (reason) {
+      setMessage(reason instanceof Error ? reason.message : "Nie udało się zmienić hasła.");
+    } finally {
+      setPending(false);
+    }
+  }
+
+  return <section className={`${styles.panel} ${styles.formPanel}`}><h2>Bezpieczeństwo konta</h2><p>Zmień hasło używane do logowania.</p><form className={styles.singleForm} onSubmit={changePassword}><div className={styles.field}><label htmlFor="currentPassword">Obecne hasło</label><input id="currentPassword" name="currentPassword" type="password" required autoComplete="current-password" /></div><div className={styles.field}><label htmlFor="newPassword">Nowe hasło</label><input id="newPassword" name="newPassword" type="password" required minLength={12} maxLength={256} autoComplete="new-password" /><small>Minimum 12 znaków, litera i cyfra.</small></div><FormMessage message={message} /><button className={styles.buttonPrimary} type="submit" disabled={pending}>{pending ? "Zmieniam hasło…" : "Zmień hasło"}</button></form></section>;
+}
+
+function FormMessage({ message }: { message: string }) {
+  if (!message) return null;
+  const successful = message.includes("został") || message.includes("zostały") || message.includes("utworzone") || message.includes("zmienione");
+  return <div className={successful ? styles.success : styles.error} role="status">{message}</div>;
+}
+
+function formatMoney(amount: string, currency: string) {
+  return Number(amount).toLocaleString("pl-PL", { style: "currency", currency });
 }
 
 function Empty({ title, text }: { title: string; text: string }) {
