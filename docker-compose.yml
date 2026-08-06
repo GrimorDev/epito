@@ -163,13 +163,13 @@ volumes:
 
 secrets:
   postgres_admin_password:
-    file: ${EPITO_POSTGRES_ADMIN_PASSWORD_FILE:-/opt/epito/secrets/postgres_admin_password}
+    environment: EPITO_POSTGRES_ADMIN_PASSWORD
   db_password:
-    file: ${EPITO_DB_PASSWORD_FILE:-/opt/epito/secrets/db_password}
+    environment: EPITO_DB_PASSWORD
   redis_password:
-    file: ${EPITO_REDIS_PASSWORD_FILE:-/opt/epito/secrets/redis_password}
+    environment: EPITO_REDIS_PASSWORD
   supervisor_password:
-    file: ${EPITO_SUPERVISOR_PASSWORD_FILE:-/opt/epito/secrets/supervisor_password}
+    environment: EPITO_SUPERVISOR_PASSWORD
 
 networks:
   frontend:
