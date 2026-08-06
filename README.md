@@ -28,7 +28,7 @@ Build produkcyjny Next.js dla Dockera:
 
 ```bash
 npm run build:docker
-npm run start:docker
+npm run start:next
 ```
 
 ## Docker
