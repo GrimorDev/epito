@@ -27,6 +27,20 @@ sudo chmod 600 /opt/epito/secrets/*
 
 Hasła nie trafiają do Compose, repozytorium ani zmiennych środowiskowych. `supervisor_password` powinien mieć co najmniej 12 znaków, literę i cyfrę.
 
+Jeżeli sam Portainer działa w kontenerze, katalog z sekretami musi być widoczny wewnątrz tego kontenera pod tą samą ścieżką. Do konfiguracji kontenera Portainera dodaj bind mount:
+
+```text
+/opt/epito/secrets:/opt/epito/secrets:ro
+```
+
+W poleceniu `docker run` odpowiada temu:
+
+```bash
+-v /opt/epito/secrets:/opt/epito/secrets:ro
+```
+
+Bez tego Portainer nie odczyta plików wskazanych w sekcji `secrets.file`, nawet jeśli istnieją one na hoście. Po dodaniu montowania odtwórz wyłącznie kontener Portainera z zachowaniem jego wolumenu `portainer_data`.
+
 ## 2. Dodaj stack z prywatnego repozytorium
 
 W Portainerze wybierz:
@@ -39,6 +53,8 @@ W Portainerze wybierz:
 6. Compose path `docker-compose.yml`.
 
 Portainer musi klonować repozytorium, ponieważ kontekst `build: .` zawiera kod aplikacji i Dockerfile.
+
+Ten wariant jest przeznaczony dla lokalnego środowiska Docker Standalone, na przykład Portainera podłączonego do `/var/run/docker.sock` na tym samym serwerze. Portainer nie obsługuje obecnie kroków `build:` dla zdalnych środowisk Docker. W takim układzie trzeba użyć zewnętrznie zbudowanego obrazu i skonfigurować w Portainerze rejestr GHCR z tokenem `read:packages`.
 
 ## 3. Ustaw zmienne stacka
 
