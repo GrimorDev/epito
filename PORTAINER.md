@@ -7,6 +7,7 @@ Stack uruchamia:
 - `epito` — aplikację Next.js z logowaniem B2B,
 - `postgres` — PostgreSQL 16 z trwałym wolumenem i RLS,
 - `redis` — Redis 7 z AOF dla sesji, rate limitingu i kolejek,
+- `document-worker` — odczyt tekstu PDF i lokalny OCR faktur wykonywany poza procesem aplikacji,
 - `migrate` — migracje oraz bezpieczne utworzenie konta supervisora.
 
 PostgreSQL i Redis nie publikują portów na hoście. Są dostępne tylko w izolowanej sieci `backend-internal`.
@@ -48,6 +49,7 @@ Pozostałe ustawienia mają bezpieczne wartości domyślne:
 | Zmienna | Domyślna wartość |
 | --- | --- |
 | `EPITO_IMAGE` | `epito:server` |
+| `EPITO_WORKER_IMAGE` | `epito-document-worker:server` |
 | `EPITO_PULL_POLICY` | `build` |
 | `EPITO_DATABASE_NAME` | `epito_prod` |
 | `EPITO_NETWORK` | `epito` |
@@ -62,7 +64,7 @@ Kliknij `Deploy the stack`. Pierwszy build może potrwać kilka minut. Kolejnoś
 1. PostgreSQL inicjalizuje bazę z SCRAM-SHA-256 i checksumami stron.
 2. Migrator tworzy schemat, ograniczoną rolę `epito_app`, RLS i konto supervisora.
 3. Redis przechodzi healthcheck.
-4. Epito uruchamia aplikację.
+4. Epito uruchamia aplikację, a `document-worker` zaczyna odbierać zadania analizy z Redisa.
 
 Sprawdź:
 
@@ -97,7 +99,7 @@ Przechowuj kopie poza VPS-em i regularnie testuj odtwarzanie. Oprócz PostgreSQL
 
 ## 7. Aktualizacja
 
-W stacku opartym na repozytorium użyj `Pull and redeploy`. Portainer pobierze nowy commit i przebuduje obraz lokalnie. Migrator pomija zastosowane migracje i zatrzymuje wdrożenie, jeżeli historyczny plik migracji został zmieniony.
+W stacku opartym na repozytorium użyj `Pull and redeploy`. Portainer pobierze nowy commit i przebuduje obraz aplikacji oraz osobny obraz workera lokalnie. Migrator pomija zastosowane migracje i zatrzymuje wdrożenie, jeżeli historyczny plik migracji został zmieniony.
 
 ## Lokalny build poza Portainerem
 

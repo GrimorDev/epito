@@ -4,6 +4,7 @@ import path from "node:path";
 import { NextRequest, NextResponse } from "next/server";
 import { getSession, isSameOrigin } from "@/lib/server/auth";
 import { withTenantTransaction } from "@/lib/server/database";
+import { enqueueBackgroundJob } from "@/lib/server/queues";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -72,7 +73,27 @@ export async function POST(request: NextRequest) {
       );
       return created.rows[0].id;
     });
-    return NextResponse.json({ ok: true, documentId }, { status: 201 });
+    try {
+      await enqueueBackgroundJob("documents", {
+        tenantId: session.tenantId,
+        actorUserId: session.userId,
+        type: "document.analyze",
+        payload: { documentId },
+        createdAt: new Date().toISOString(),
+      }, { jobId: `document-analyze-${documentId}` });
+    } catch (queueError) {
+      console.error("Document analysis enqueue failed", queueError);
+      await withTenantTransaction(session.tenantId, session.userId, async (client) => {
+        await client.query(`
+          update documents
+          set status = 'requires_action',
+              structured_data = jsonb_set(coalesce(structured_data, '{}'::jsonb), '{analysis}', $1::jsonb, true),
+              updated_at = now()
+          where id = $2
+        `, [JSON.stringify({ state: "failed", reason: "Nie udało się uruchomić automatycznej analizy. Dane można uzupełnić ręcznie.", analyzed_at: new Date().toISOString() }), documentId]);
+      });
+    }
+    return NextResponse.json({ ok: true, documentId, analysis: "queued" }, { status: 201 });
   } catch (error) {
     if (fileWritten) await rm(absolutePath, { force: true }).catch(() => undefined);
     console.error("Document upload failed", error);

@@ -11,6 +11,7 @@ export type BackgroundJob = {
     | "sms.send"
     | "push.send"
     | "pdf.generate"
+    | "document.analyze"
     | "ksef.sync"
     | "payment.reconcile";
   payload: Record<string, unknown>;
