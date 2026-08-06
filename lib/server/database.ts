@@ -57,6 +57,30 @@ export async function withTenantTransaction<T>(
   }
 }
 
+export async function withUserTransaction<T>(
+  userId: string,
+  operation: (client: PoolClient) => Promise<T>,
+): Promise<T> {
+  const pool = await getPool();
+  const client = await pool.connect();
+
+  try {
+    await client.query("begin");
+    await client.query(
+      "select set_config('app.current_tenant_id', '', true), set_config('app.current_user_id', $1, true)",
+      [userId],
+    );
+    const result = await operation(client);
+    await client.query("commit");
+    return result;
+  } catch (error) {
+    await client.query("rollback");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 export async function tenantQuery<Row extends QueryResultRow>(
   tenantId: string,
   userId: string,

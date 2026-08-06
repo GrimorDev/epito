@@ -47,6 +47,7 @@ jobs:
           printf '%s' 'ci-admin-password' > /tmp/epito-secrets/postgres_admin_password
           printf '%s' 'ci-app-password' > /tmp/epito-secrets/db_password
           printf '%s' 'ci-redis-password' > /tmp/epito-secrets/redis_password
+          printf '%s' 'ci-supervisor-password-123' > /tmp/epito-secrets/supervisor_password
           chmod 600 /tmp/epito-secrets/*
 
       - name: Start authenticated Redis
@@ -73,6 +74,8 @@ jobs:
           REDIS_HOST: 127.0.0.1
           REDIS_PORT: "6379"
           REDIS_PASSWORD_FILE: /tmp/epito-secrets/redis_password
+          SUPERVISOR_EMAIL: supervisor-seed@example.test
+          SUPERVISOR_PASSWORD_FILE: /tmp/epito-secrets/supervisor_password
 
       - name: Verify isolation and Redis primitives
         run: node scripts/verify-backend.mjs
@@ -87,4 +90,5 @@ jobs:
           REDIS_HOST: 127.0.0.1
           REDIS_PORT: "6379"
           REDIS_PASSWORD_FILE: /tmp/epito-secrets/redis_password
+          SUPERVISOR_EMAIL: supervisor-seed@example.test
           EPITO_ALLOW_DESTRUCTIVE_TESTS: "true"
