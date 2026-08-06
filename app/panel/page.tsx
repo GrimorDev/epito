@@ -13,7 +13,6 @@ import {
   Check,
   ChevronDown,
   CircleHelp,
-  Clock3,
   CreditCard,
   FileText,
   FolderOpen,
@@ -23,7 +22,6 @@ import {
   MessageSquareText,
   Moon,
   Phone,
-  ReceiptText,
   Send,
   Settings,
   Sun,
@@ -88,7 +86,11 @@ export default function ClientPanel() {
   useEffect(() => {
     const savedTheme = window.localStorage.getItem("epito-theme");
     const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-    setDarkMode(savedTheme ? savedTheme === "dark" : prefersDark);
+    const animationFrame = window.requestAnimationFrame(() => {
+      setDarkMode(savedTheme ? savedTheme === "dark" : prefersDark);
+    });
+
+    return () => window.cancelAnimationFrame(animationFrame);
   }, []);
 
   const duePayments = payments.filter((payment) => payment.status !== "paid");

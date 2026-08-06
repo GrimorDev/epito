@@ -1,0 +1,38 @@
+name: epito-local
+
+services:
+  epito:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: epito:local
+    container_name: ${EPITO_CONTAINER_NAME:-epito-local}
+    restart: unless-stopped
+    init: true
+    ports:
+      - "${EPITO_BIND_ADDRESS:-127.0.0.1}:${EPITO_PORT:-3000}:3000"
+    environment:
+      NODE_ENV: production
+      NEXT_TELEMETRY_DISABLED: "1"
+      HOSTNAME: 0.0.0.0
+      PORT: "3000"
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3000/api/health').then((response) => { if (!response.ok) process.exit(1) }).catch(() => process.exit(1))"
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    networks:
+      - epito
+
+networks:
+  epito:
+    name: ${EPITO_NETWORK:-epito-local}
