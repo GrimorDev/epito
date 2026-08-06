@@ -54,11 +54,14 @@ test("keeps public demo and production data flows explicitly separated", async (
   assert.doesNotMatch(admin, /seedWorkspaces|const initialPayments/);
   assert.match(supervisor, /\/api\/supervisor\/tenants/);
   assert.match(workspace, /\/api\/workspace\/overview/);
+  assert.match(workspace, /<ClientPortal mode="production"/);
+  assert.match(demo, /export function ClientPortal/);
   assert.match(login, /\/api\/auth\/login/);
   assert.match(login, /router\.push\(payload\.redirectTo\)/);
   assert.match(authRoute, /platformRole === "supervisor" \? "\/admin"/);
   assert.match(compose, /pull_policy:\s*\$\{EPITO_PULL_POLICY:-build\}/);
   assert.match(compose, /EPITO_PORT:-8063/);
+  assert.match(compose, /uploads_data:\/app\/data\/uploads/);
   assert.match(compose, /SUPERVISOR_PASSWORD_FILE:\s*\/run\/secrets\/supervisor_password/);
   assert.match(compose, /supervisor_password:\s*\n\s*environment:\s*EPITO_SUPERVISOR_PASSWORD/);
   assert.match(compose, /redis_password:\s*\n\s*environment:\s*EPITO_REDIS_PASSWORD/);

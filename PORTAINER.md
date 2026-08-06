@@ -37,6 +37,7 @@ W sekcji `Environment variables` dodaj wszystkie poniższe pozycje:
 | `EPITO_REDIS_PASSWORD` | kolejne unikalne losowe hasło techniczne, minimum 32 znaki |
 | `EPITO_BASE_DOMAIN` | produkcyjna domena bazowa, na przykład `epito.pl` |
 | `EPITO_PORT` | port hosta, domyślnie `8063` |
+| `EPITO_UPLOADS_VOLUME` | opcjonalna nazwa trwałego wolumenu dokumentów, domyślnie `epito-uploads-data` |
 
 Trzy hasła techniczne muszą być różne. Wygeneruj je w menedżerze haseł. Nie umieszczaj ich w repozytorium ani w pliku `.env` przesyłanym do Git.
 
@@ -70,7 +71,7 @@ https://twoja-domena.pl/api/health
 https://twoja-domena.pl/logowanie
 ```
 
-Logowanie supervisora używa wartości `EPITO_SUPERVISOR_EMAIL` i `EPITO_SUPERVISOR_PASSWORD`. Po zalogowaniu można tworzyć rzeczywiste organizacje oraz pierwsze konta ich właścicieli. Właściciel organizacji może następnie tworzyć klientów i pracowników.
+Logowanie supervisora używa wartości `EPITO_SUPERVISOR_EMAIL` i `EPITO_SUPERVISOR_PASSWORD`. Po zalogowaniu można tworzyć rzeczywiste organizacje oraz pierwsze konta ich właścicieli. Właściciel widzi produkcyjny portal pod `/workspace`, zgodny z publicznym demo, a zarządzanie firmami, płatnościami i pracownikami znajduje się pod `/office`.
 
 Publiczne demo działa wyłącznie pod `/panel` i nie zapisuje przykładowych danych do PostgreSQL. Produkcyjne dane są dostępne po logowaniu pod `/workspace`, a prawdziwy panel właściciela platformy pod `/admin`.
 
@@ -92,7 +93,7 @@ Przykładowy backup PostgreSQL:
 docker exec epito-postgres sh -c 'PGPASSWORD="$(cat /run/secrets/postgres_admin_password)" pg_dump -U epito_admin -d epito_prod -Fc' > epito-$(date +%F-%H%M).dump
 ```
 
-Przechowuj kopie poza VPS-em i regularnie testuj odtwarzanie. Wolumen nie jest kopią zapasową.
+Przechowuj kopie poza VPS-em i regularnie testuj odtwarzanie. Oprócz PostgreSQL wykonuj kopię wolumenu `epito-uploads-data`, ponieważ zawiera przesłane dokumenty. Wolumen nie jest kopią zapasową.
 
 ## 7. Aktualizacja
 

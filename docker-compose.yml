@@ -23,6 +23,7 @@ x-epito-runtime: &epito-runtime
   REDIS_PORT: "6379"
   REDIS_PASSWORD_FILE: /run/secrets/redis_password
   EPITO_BASE_DOMAIN: ${EPITO_BASE_DOMAIN:-localhost}
+  EPITO_UPLOADS_DIR: /app/data/uploads
 
 services:
   postgres:
@@ -127,6 +128,8 @@ services:
       - "${EPITO_BIND_ADDRESS:-0.0.0.0}:${EPITO_PORT:-8063}:3000"
     environment:
       <<: *epito-runtime
+    volumes:
+      - uploads_data:/app/data/uploads
     secrets:
       - db_password
       - redis_password
@@ -160,6 +163,8 @@ volumes:
     name: ${EPITO_POSTGRES_VOLUME:-epito-postgres-data}
   redis_data:
     name: ${EPITO_REDIS_VOLUME:-epito-redis-data}
+  uploads_data:
+    name: ${EPITO_UPLOADS_VOLUME:-epito-uploads-data}
 
 secrets:
   postgres_admin_password:

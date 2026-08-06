@@ -1,11 +1,13 @@
 # Epito
 
-Epito to responsywny prototyp portalu klienta dla biur rachunkowych. Zawiera landing page, panel klienta, panel właściciela platformy oraz produkcyjną podstawę PostgreSQL i Redis dla wdrożeń Docker.
+Epito to responsywny portal klienta z produkcyjnym logowaniem B2B, panelem organizacji, panelem supervisora oraz warstwą PostgreSQL i Redis dla wdrożeń Docker.
 
 ## Widoki
 
 - `/` — landing page produktu
-- `/panel` — panel klienta biura rachunkowego
+- `/panel` — publiczna demonstracja panelu klienta
+- `/workspace` — produkcyjny panel klienta, zgodny wizualnie z demo
+- `/office` — zaplecze organizacji do zarządzania firmami, płatnościami i zespołem
 - `/admin` — panel właściciela platformy
 - `/api/health` — stan usługi dla Dockera i monitoringu
 
@@ -39,17 +41,15 @@ Lokalny build i start:
 docker compose -f docker-compose.local.yml up -d --build
 ```
 
-Start z gotowego obrazu GHCR:
+Start stacka produkcyjnego z lokalnym buildem:
 
 ```bash
-docker compose up -d
+docker compose up -d --build
 ```
 
 Szczegółowa konfiguracja Portainera, prywatnego GHCR, domeny i aktualizacji znajduje się w [PORTAINER.md](PORTAINER.md).
 
-Stack uruchamia aplikację, PostgreSQL 16, Redis 7 oraz jednorazowy migrator. Bazy nie publikują portów na hoście. PostgreSQL wykorzystuje osobne konto administracyjne i ograniczoną rolę aplikacyjną z wymuszonym RLS, a Redis ma AOF, uwierzytelnianie i trwały wolumen.
-
-Przed pierwszym uruchomieniem trzeba utworzyć trzy pliki sekretów opisane w `PORTAINER.md`.
+Stack uruchamia aplikację, PostgreSQL 16, Redis 7 oraz jednorazowy migrator. Bazy nie publikują portów na hoście. PostgreSQL wykorzystuje osobne konto administracyjne i ograniczoną rolę aplikacyjną z wymuszonym RLS, Redis ma AOF i uwierzytelnianie, a dokumenty są zapisywane w trwałym wolumenie `uploads_data`.
 
 ## Automatyczne obrazy
 
@@ -61,4 +61,4 @@ ghcr.io/grimordev/epito:latest
 
 ## Status produktu
 
-To nadal wersja demonstracyjna interfejsu. Schemat PostgreSQL, RLS, Redis, migracje i mechanizmy bezpieczeństwa są gotowe jako warstwa backendowa, ale formularze panelu nie zapisują jeszcze danych. Docelowe logowanie B2B, magazyn plików, integracje płatnicze, automatyczne backupy i pełne polityki RODO wymagają dalszej implementacji.
+Logowanie B2B, organizacje, zespół, płatności, ustawienia i magazyn dokumentów zapisują dane produkcyjne. Publiczne demo pozostaje odseparowane od PostgreSQL. Integracja operatora płatności, produkcyjny moduł wiadomości, automatyczne backupy i komplet dokumentacji RODO wymagają dalszej konfiguracji przed komercyjnym uruchomieniem.

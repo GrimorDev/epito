@@ -17,6 +17,7 @@ import {
   WalletCards,
 } from "lucide-react";
 import styles from "../secure.module.css";
+import { ClientPortal } from "../panel/page";
 
 type Session = {
   fullName: string;
@@ -64,6 +65,10 @@ const paymentTypeLabel: Record<string, string> = {
 };
 
 export default function WorkspacePage() {
+  return <ClientPortal mode="production" />;
+}
+
+export function OfficeWorkspacePage() {
   const router = useRouter();
   const [session, setSession] = useState<Session | null>(null);
   const [data, setData] = useState<Overview | null>(null);
@@ -189,7 +194,7 @@ export default function WorkspacePage() {
       </div>
       <div className={styles.appGrid}>
         <aside className={styles.sidebar}>
-          <Link className={styles.brand} href="/workspace"><span className={styles.brandMark}>E</span><span>EPITO</span></Link>
+          <Link className={styles.brand} href="/office"><span className={styles.brandMark}>E</span><span>EPITO</span></Link>
           <nav>
             <p className={styles.navLabel}>Organizacja</p>
             <div className={styles.navList}>

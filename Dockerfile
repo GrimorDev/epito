@@ -26,7 +26,9 @@ LABEL org.opencontainers.image.title="Epito" \
       org.opencontainers.image.source="https://github.com/GrimorDev/epito"
 
 RUN groupadd --system --gid 1001 nodejs \
-    && useradd --system --uid 1001 --gid nodejs nextjs
+    && useradd --system --uid 1001 --gid nodejs nextjs \
+    && mkdir -p /app/data/uploads \
+    && chown -R nextjs:nodejs /app/data
 
 COPY --from=builder --chown=nextjs:nodejs /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
