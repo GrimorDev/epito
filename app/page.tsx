@@ -29,7 +29,7 @@ const features = [
 const faqs = [
   [
     "Czy muszę zmieniać program księgowy?",
-    "Nie. Saldo jest warstwą kontaktu z klientem, a nie zamiennikiem programu księgowego. W pilotażu dane można wgrywać ręcznie, a kolejne integracje dobieramy do używanych systemów.",
+    "Nie. Rachuno jest warstwą kontaktu z klientem, a nie zamiennikiem programu księgowego. W pilotażu dane można wgrywać ręcznie, a kolejne integracje dobieramy do używanych systemów.",
   ],
   [
     "Czy płatności w demonstracji są prawdziwe?",
@@ -53,10 +53,10 @@ export default function Home() {
   return (
     <main className="site-shell">
       <header className="landing-nav">
-        <Link className="brand" href="/" aria-label="Saldo, strona główna">
-          <span className="brand-mark" aria-hidden="true">S</span>
+        <Link className="brand" href="/" aria-label="Rachuno, strona główna">
+          <span className="brand-mark" aria-hidden="true">R</span>
           <span>
-            <strong>SALDO</strong>
+            <strong>RACHUNO</strong>
             <small>portal dla biur</small>
           </span>
         </Link>
@@ -85,7 +85,7 @@ export default function Home() {
           <div className="eyebrow"><span /> Dla nowoczesnych biur rachunkowych</div>
           <h1>Mniej pytań o podatki.<br /><em>Więcej spokoju.</em></h1>
           <p className="hero-lead">
-            Saldo przekazuje klientom kwoty VAT, PIT i ZUS, pilnuje terminów i porządkuje dokumenty, zanim rozdzwonią się telefony.
+            Rachuno przekazuje klientom kwoty VAT, PIT i ZUS, pilnuje terminów i porządkuje dokumenty, zanim rozdzwonią się telefony.
           </p>
           <div className="hero-actions">
             <Link className="button button-primary" href="/panel">Zobacz panel klienta <span>→</span></Link>
@@ -104,7 +104,7 @@ export default function Home() {
           <div className="mint-orbit orbit-two" />
           <div className="preview-window">
             <div className="preview-topbar">
-              <div className="preview-logo"><span>S</span> SALDO</div>
+              <div className="preview-logo"><span>R</span> RACHUNO</div>
               <div className="preview-person"><span>MK</span><div><strong>Marcin Kowalski</strong><small>Kowalski Studio</small></div></div>
             </div>
             <div className="preview-content">
@@ -138,7 +138,7 @@ export default function Home() {
           <h2>10. i 20. dzień miesiąca nie musi oznaczać <em>lawiny wiadomości.</em></h2>
           <div className="problem-copy">
             <p>Klient nie chce dzwonić. Chce tylko szybko sprawdzić kwotę, termin i status dokumentów.</p>
-            <p>Saldo daje mu odpowiedź od razu, a Twojemu zespołowi oddaje czas na pracę, która naprawdę wymaga wiedzy księgowego.</p>
+            <p>Rachuno daje mu odpowiedź od razu, a Twojemu zespołowi oddaje czas na pracę, która naprawdę wymaga wiedzy księgowego.</p>
           </div>
         </div>
         <div className="before-after">
@@ -151,7 +151,7 @@ export default function Home() {
           </div>
           <div className="transform-arrow" aria-hidden="true">→</div>
           <div className="after-card">
-            <span className="card-label label-mint">Z SALDO</span>
+            <span className="card-label label-mint">Z RACHUNO</span>
             <div className="calm-number">3</div>
             <strong>proste statusy</strong>
             <div className="status-list">
@@ -166,7 +166,7 @@ export default function Home() {
 
       <section className="features-section" id="funkcje">
         <div className="section-heading">
-          <div><span className="section-kicker light">Co robi Saldo</span><h2>Prosty portal.<br />Duża różnica.</h2></div>
+          <div><span className="section-kicker light">Co robi Rachuno</span><h2>Prosty portal.<br />Duża różnica.</h2></div>
           <p>Jedno miejsce dla informacji, o które klienci pytają najczęściej.</p>
         </div>
         <div className="features-grid">
@@ -187,7 +187,7 @@ export default function Home() {
         <div className="steps-grid">
           <article><span>1</span><div><h3>Dodajesz klientów</h3><p>Importujesz listę firm i wybierasz, które informacje mają zobaczyć w portalu.</p></div></article>
           <article><span>2</span><div><h3>Wgrywasz rozliczenia</h3><p>Na start wystarczy prosty plik. Docelowo dane będą pobierane z programu księgowego.</p></div></article>
-          <article><span>3</span><div><h3>Saldo pilnuje reszty</h3><p>Klient dostaje powiadomienie, płaci i widzi potwierdzenie bez angażowania księgowego.</p></div></article>
+          <article><span>3</span><div><h3>Rachuno pilnuje reszty</h3><p>Klient dostaje powiadomienie, płaci i widzi potwierdzenie bez angażowania księgowego.</p></div></article>
         </div>
       </section>
 
@@ -228,26 +228,26 @@ export default function Home() {
         <div className="pilot-copy">
           <span className="section-kicker light">Zostań współtwórcą</span>
           <h2>Twoi klienci zasługują na prostszą księgowość.</h2>
-          <p>Zostaw kontakt. W 20 minut pokażemy Ci demo i sprawdzimy, czy Saldo pasuje do pracy Twojego biura.</p>
+          <p>Zostaw kontakt. W 20 minut pokażemy Ci demo i sprawdzimy, czy Rachuno pasuje do pracy Twojego biura.</p>
         </div>
         {sent ? (
-          <div className="form-success" role="status"><span>✓</span><div><strong>Dziękujemy!</strong><p>Zgłoszenie demonstracyjne zostało zapisane. W wersji produkcyjnej w tym miejscu trafi do zespołu Saldo.</p></div></div>
+          <div className="form-success" role="status"><span>✓</span><div><strong>Dziękujemy!</strong><p>Zgłoszenie demonstracyjne zostało zapisane. W wersji produkcyjnej w tym miejscu trafi do zespołu Rachuno.</p></div></div>
         ) : (
           <form className="pilot-form" onSubmit={submitPilot}>
             <label>Imię i nazwisko<input required name="name" placeholder="Anna Kowalska" autoComplete="name" /></label>
             <label>E-mail służbowy<input required type="email" name="email" placeholder="anna@twojebiuro.pl" autoComplete="email" /></label>
             <label>Liczba obsługiwanych firm<select name="clients" defaultValue="31-100"><option>do 30</option><option>31-100</option><option>powyżej 100</option></select></label>
-            <button className="button button-primary button-wide" type="submit">Chcę zobaczyć Saldo <span>→</span></button>
+            <button className="button button-primary button-wide" type="submit">Chcę zobaczyć Rachuno <span>→</span></button>
             <small>Bez zobowiązań. Najpierw krótka rozmowa i dopasowane demo.</small>
           </form>
         )}
       </section>
 
       <footer className="footer">
-        <Link className="brand brand-footer" href="/"><span className="brand-mark" aria-hidden="true">S</span><span><strong>SALDO</strong><small>portal dla biur</small></span></Link>
+        <Link className="brand brand-footer" href="/"><span className="brand-mark" aria-hidden="true">R</span><span><strong>RACHUNO</strong><small>portal dla biur</small></span></Link>
         <p>Spokojniejsza komunikacja między biurem rachunkowym a klientem.</p>
         <div><a href="#funkcje">Funkcje</a><a href="#cennik">Cennik</a><Link href="/panel">Demo panelu</Link></div>
-        <small>© 2026 Saldo. Koncepcja demonstracyjna.</small>
+        <small>© 2026 Rachuno. Koncepcja demonstracyjna.</small>
       </footer>
     </main>
   );

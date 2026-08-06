@@ -20,20 +20,20 @@ export async function generateMetadata(): Promise<Metadata> {
   const baseUrl = `${protocol}://${host}`;
 
   return {
-    title: "Saldo — portal klienta dla biur rachunkowych",
+    title: "Rachuno, portal klienta dla biur rachunkowych",
     description: "Automatyczne informacje o podatkach, płatności i dokumenty klientów w jednym miejscu.",
     openGraph: {
       title: "Mniej pytań o podatki. Więcej spokoju.",
       description: "Portal klienta dla biur rachunkowych.",
       type: "website",
       locale: "pl_PL",
-      images: [{ url: `${baseUrl}/og.png`, width: 1200, height: 630, alt: "Saldo — portal klienta dla biur rachunkowych" }],
+      images: [{ url: `${baseUrl}/og-rachuno.png`, width: 1731, height: 909, alt: "Rachuno, platforma dla biur rachunkowych" }],
     },
     twitter: {
       card: "summary_large_image",
       title: "Mniej pytań o podatki. Więcej spokoju.",
       description: "Portal klienta dla biur rachunkowych.",
-      images: [`${baseUrl}/og.png`],
+      images: [`${baseUrl}/og-rachuno.png`],
     },
   };
 }

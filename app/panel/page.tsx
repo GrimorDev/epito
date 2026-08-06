@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { ChangeEvent, useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
+import { DocumentsWorkspace, SettingsWorkspace, TeamWorkspace, type WorkspaceDocument } from "./workspace-sections";
 import {
   ArrowLeft,
   ArrowRight,
@@ -15,27 +16,27 @@ import {
   Clock3,
   CreditCard,
   FileText,
-  Filter,
   FolderOpen,
   Landmark,
   LayoutDashboard,
   Menu,
   MessageSquareText,
   Moon,
-  MoreHorizontal,
   Phone,
   ReceiptText,
   Send,
+  Settings,
   Sun,
   TrendingDown,
   TrendingUp,
   Upload,
+  Users,
   WalletCards,
   X,
   type LucideIcon,
 } from "lucide-react";
 
-type Section = "Pulpit" | "Płatności" | "Dokumenty" | "Wiadomości";
+type Section = "Pulpit" | "Płatności" | "Dokumenty" | "Wiadomości" | "Zespół" | "Ustawienia";
 type Payment = {
   id: number;
   type: string;
@@ -51,11 +52,14 @@ const initialPayments: Payment[] = [
   { id: 3, type: "PIT", period: "czerwiec 2026", amount: 2640, due: "21 lipca 2026", status: "paid" },
 ];
 
-const baseDocuments = [
-  { id: 1, name: "Faktury sprzedażowe za lipiec", meta: "28 plików, dodano 4 sierpnia", status: "Przetworzone", type: "PDF" },
-  { id: 2, name: "Wyciąg bankowy za lipiec", meta: "1 plik, dodano 3 sierpnia", status: "Przetworzone", type: "CSV" },
-  { id: 3, name: "Faktury kosztowe za lipiec", meta: "19 plików, dodano 5 sierpnia", status: "W trakcie", type: "ZIP" },
-  { id: 4, name: "Umowa leasingu", meta: "Brakuje dokumentu", status: "Do uzupełnienia", type: "BRAK" },
+const baseDocuments: WorkspaceDocument[] = [
+  { id: 1, name: "FV 2026 07 184, Nova Print", meta: "PDF 842 KB, dodano 4 sierpnia", status: "Przetworzone", type: "PDF", year: 2026, month: "Lipiec", category: "Sprzedaż", amount: "4 920,00 zł", pages: 2 },
+  { id: 2, name: "Wyciąg bankowy za lipiec", meta: "CSV 128 KB, dodano 3 sierpnia", status: "Przetworzone", type: "CSV", year: 2026, month: "Lipiec", category: "Bank", pages: 6 },
+  { id: 3, name: "FV 07 8831, Office Market", meta: "PDF 1,2 MB, dodano 5 sierpnia", status: "W trakcie", type: "PDF", year: 2026, month: "Lipiec", category: "Koszty", amount: "1 248,60 zł", pages: 3 },
+  { id: 4, name: "Umowa leasingu pojazdu", meta: "Brakuje załącznika, dodano 5 sierpnia", status: "Do uzupełnienia", type: "PDF", year: 2026, month: "Lipiec", category: "Umowy", pages: 8 },
+  { id: 5, name: "FV 2026 07 201, Studio Forma", meta: "PDF 620 KB, dodano 6 sierpnia", status: "Przetworzone", type: "PDF", year: 2026, month: "Lipiec", category: "Sprzedaż", amount: "8 610,00 zł", pages: 1 },
+  { id: 6, name: "Faktura za oprogramowanie", meta: "PDF 390 KB, dodano 6 sierpnia", status: "W trakcie", type: "PDF", year: 2026, month: "Lipiec", category: "Koszty", amount: "399,00 zł", pages: 1 },
+  { id: 7, name: "Wyciąg bankowy za czerwiec", meta: "CSV 116 KB, dodano 2 lipca", status: "Przetworzone", type: "CSV", year: 2026, month: "Czerwiec", category: "Bank", pages: 5 },
 ];
 
 const formatMoney = (amount: number) =>
@@ -82,7 +86,7 @@ export default function ClientPanel() {
   const [darkMode, setDarkMode] = useState(false);
 
   useEffect(() => {
-    const savedTheme = window.localStorage.getItem("saldo-theme");
+    const savedTheme = window.localStorage.getItem("rachuno-theme");
     const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
     setDarkMode(savedTheme ? savedTheme === "dark" : prefersDark);
   }, []);
@@ -95,6 +99,8 @@ export default function ClientPanel() {
     { label: "Płatności", icon: CreditCard, badge: String(duePayments.length) },
     { label: "Dokumenty", icon: FileText, badge: "2" },
     { label: "Wiadomości", icon: MessageSquareText, badge: "1" },
+    { label: "Zespół", icon: Users },
+    { label: "Ustawienia", icon: Settings },
   ];
 
   function selectSection(value: Section) {
@@ -105,7 +111,7 @@ export default function ClientPanel() {
   function toggleTheme() {
     setDarkMode((current) => {
       const next = !current;
-      window.localStorage.setItem("saldo-theme", next ? "dark" : "light");
+      window.localStorage.setItem("rachuno-theme", next ? "dark" : "light");
       return next;
     });
   }
@@ -143,6 +149,10 @@ export default function ClientPanel() {
         meta: `${Math.max(1, Math.round(file.size / 1024))} KB, dodano teraz`,
         status: "W trakcie",
         type: file.name.split(".").pop()?.toUpperCase() || "PLIK",
+        year: 2026,
+        month: "Lipiec",
+        category: "Koszty",
+        pages: 1,
       },
       ...items,
     ]);
@@ -153,8 +163,8 @@ export default function ClientPanel() {
     <main className={darkMode ? "portal-shell theme-dark" : "portal-shell"}>
       <aside className={mobileMenu ? "portal-sidebar sidebar-open" : "portal-sidebar"}>
         <div className="portal-brand">
-          <span className="brand-mark">S</span>
-          <span><strong>SALDO</strong><small>Panel klienta</small></span>
+          <span className="brand-mark">R</span>
+          <span><strong>RACHUNO</strong><small>Panel klienta</small></span>
         </div>
         <button className="sidebar-close" type="button" onClick={() => setMobileMenu(false)} aria-label="Zamknij menu"><X size={24} /></button>
 
@@ -178,7 +188,7 @@ export default function ClientPanel() {
           <p>Twój opiekun odpowie na pytania dotyczące rozliczeń.</p>
           <button onClick={() => selectSection("Wiadomości")}>Napisz wiadomość</button>
         </div>
-        <Link className="back-to-site" href="/"><ArrowLeft size={16} /> Strona Saldo</Link>
+        <Link className="back-to-site" href="/"><ArrowLeft size={16} /> Strona Rachuno</Link>
       </aside>
 
       {mobileMenu && <button className="sidebar-backdrop" aria-label="Zamknij menu" onClick={() => setMobileMenu(false)} />}
@@ -324,25 +334,7 @@ export default function ClientPanel() {
                 </section>
               )}
 
-              {section === "Dokumenty" && (
-                <section className="subpage">
-                  <div className="page-heading"><div><p>Bezpieczne archiwum</p><h1>Dokumenty</h1><span>Przekazuj pliki i sprawdzaj ich status.</span></div><label className="upload-button"><Upload size={18} /> Dodaj dokument<input type="file" onChange={uploadDocument} /></label></div>
-                  <label className="drop-zone"><input type="file" onChange={uploadDocument} /><Upload size={27} /><strong>Przeciągnij plik lub kliknij, aby go dodać</strong><small>PDF, JPG, PNG, CSV lub ZIP, maksymalnie 20 MB</small></label>
-                  <div className="panel-card documents-card">
-                    <div className="panel-card-heading"><div><h3>Dokumenty firmy</h3><p>{documents.length} pozycji</p></div><button><Filter size={16} /> Filtruj</button></div>
-                    <div className="documents-table">
-                      {documents.map((document) => (
-                        <div key={document.id}>
-                          <span className={document.type === "BRAK" ? "file-icon alert" : "file-icon"}>{document.type}</span>
-                          <div><strong>{document.name}</strong><small>{document.meta}</small></div>
-                          <span className={document.status === "Przetworzone" ? "doc-status done" : document.status === "Do uzupełnienia" ? "doc-status missing" : "doc-status pending"}>{document.status}</span>
-                          <button aria-label={`Więcej opcji dla ${document.name}`}><MoreHorizontal size={20} /></button>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </section>
-              )}
+              {section === "Dokumenty" && <DocumentsWorkspace documents={documents} setDocuments={setDocuments} onUpload={uploadDocument} />}
 
               {section === "Wiadomości" && (
                 <section className="subpage messages-page">
@@ -362,6 +354,10 @@ export default function ClientPanel() {
                   </div>
                 </section>
               )}
+
+              {section === "Zespół" && <TeamWorkspace />}
+
+              {section === "Ustawienia" && <SettingsWorkspace />}
             </motion.div>
           </AnimatePresence>
         </div>
