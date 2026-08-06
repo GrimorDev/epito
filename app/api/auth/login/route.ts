@@ -68,7 +68,7 @@ export async function POST(request: NextRequest) {
 
   const response = NextResponse.json({
     ok: true,
-    redirectTo: identity.platformRole === "supervisor" ? "/supervisor" : "/workspace",
+    redirectTo: identity.platformRole === "supervisor" ? "/admin" : "/workspace",
   });
   setSessionCookie(response, request, token);
   return response;

@@ -134,7 +134,7 @@ export default function SupervisorPage() {
       </div>
       <div className={styles.appGrid}>
         <aside className={styles.sidebar}>
-          <Link className={styles.brand} href="/supervisor"><span className={styles.brandMark}>E</span><span>EPITO</span></Link>
+          <Link className={styles.brand} href="/admin"><span className={styles.brandMark}>E</span><span>EPITO</span></Link>
           <nav>
             <p className={styles.navLabel}>Panel platformy</p>
             <div className={styles.navList}>
