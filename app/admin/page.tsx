@@ -108,7 +108,7 @@ export default function OwnerAdminPanel() {
   return (
     <main className={darkMode ? "owner-shell owner-dark" : "owner-shell"}>
       <aside className={mobileMenu ? "owner-sidebar open" : "owner-sidebar"}>
-        <div className="owner-brand"><span>R</span><div><strong>RACHUNO</strong><small>CONTROL</small></div></div>
+        <div className="owner-brand"><span>E</span><div><strong>EPITO</strong><small>CONTROL</small></div></div>
         <button className="owner-mobile-close" onClick={() => setMobileMenu(false)}><X size={22} /></button>
         <div className="owner-role"><ShieldCheck size={18} /><div><small>ROLA</small><strong>Właściciel platformy</strong></div></div>
         <nav>
@@ -131,7 +131,7 @@ export default function OwnerAdminPanel() {
       <section className="owner-main">
         <header className="owner-topbar">
           <button className="owner-menu-button" onClick={() => setMobileMenu(true)}><Menu size={22} /></button>
-          <div><small>RACHUNO CONTROL</small><strong>{section}</strong></div>
+          <div><small>EPITO CONTROL</small><strong>{section}</strong></div>
           <div className="owner-top-actions">
             <label className="owner-global-search"><Search size={18} /><input placeholder="Szukaj biura, użytkownika lub adresu" /></label>
             <button className="owner-theme-toggle" onClick={() => setDarkMode((value) => !value)}>{darkMode ? <Sun size={20} /> : <Moon size={20} />}</button>
@@ -167,7 +167,7 @@ export default function OwnerAdminPanel() {
                   <article className="owner-card hierarchy-card">
                     <div className="owner-card-head"><div><h3>Model dostępu</h3><p>Hierarchia uprawnień platformy.</p></div></div>
                     <div className="hierarchy-flow">
-                      <div className="hierarchy-level platform"><ShieldCheck size={21} /><span><small>POZIOM 1</small><strong>Rachuno</strong><p>Właściciel i supervisorzy</p></span></div>
+                      <div className="hierarchy-level platform"><ShieldCheck size={21} /><span><small>POZIOM 1</small><strong>Epito</strong><p>Właściciel i supervisorzy</p></span></div>
                       <i />
                       <div className="hierarchy-level tenant"><Building2 size={21} /><span><small>POZIOM 2</small><strong>Biuro klienta</strong><p>Administrator organizacji</p></span></div>
                       <i />
@@ -178,7 +178,7 @@ export default function OwnerAdminPanel() {
                 </div>
 
                 <div className="owner-dashboard-grid lower">
-                  <article className="owner-card activity-card"><div className="owner-card-head"><div><h3>Ostatnie zdarzenia</h3><p>Najważniejsze operacje administratorskie.</p></div></div><div className="activity-list"><div><span><UserCog size={17} /></span><p><strong>Zmieniono rolę użytkownika</strong><small>Biuro Atlas, 12 minut temu</small></p></div><div><span><Globe2 size={17} /></span><p><strong>Utworzono nowy adres panelu</strong><small>lexfin.rachuno.pl, 2 godziny temu</small></p></div><div><span><CreditCard size={17} /></span><p><strong>Zmieniono plan na Enterprise</strong><small>Nova Rachunkowość, wczoraj</small></p></div></div></article>
+                  <article className="owner-card activity-card"><div className="owner-card-head"><div><h3>Ostatnie zdarzenia</h3><p>Najważniejsze operacje administratorskie.</p></div></div><div className="activity-list"><div><span><UserCog size={17} /></span><p><strong>Zmieniono rolę użytkownika</strong><small>Biuro Atlas, 12 minut temu</small></p></div><div><span><Globe2 size={17} /></span><p><strong>Utworzono nowy adres panelu</strong><small>lexfin.epito.pl, 2 godziny temu</small></p></div><div><span><CreditCard size={17} /></span><p><strong>Zmieniono plan na Enterprise</strong><small>Nova Rachunkowość, wczoraj</small></p></div></div></article>
                   <article className="owner-card provisioning-card"><div><span>NOWY PANEL</span><h3>Uruchom środowisko klienta w kilka minut.</h3><p>Adres, administrator i plan powstają w jednym procesie.</p><button onClick={() => setCreateOpen(true)}>Utwórz usługę <ArrowRight size={16} /></button></div><Globe2 size={90} /></article>
                 </div>
               </>
@@ -199,9 +199,9 @@ export default function OwnerAdminPanel() {
           <motion.div className="modal-backdrop" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
             <motion.div className="workspace-create-modal" initial={{ opacity: 0, scale: .96, y: 18 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: .97 }}>
               <button className="modal-close" onClick={() => setCreateOpen(false)}><X size={23} /></button>
-              <span className="modal-kicker">NOWA ORGANIZACJA</span><h2>Utwórz panel klienta</h2><p>Rachuno przygotuje adres organizacji i konto jej pierwszego administratora.</p>
+              <span className="modal-kicker">NOWA ORGANIZACJA</span><h2>Utwórz panel klienta</h2><p>Epito przygotuje adres organizacji i konto jej pierwszego administratora.</p>
               <label>Nazwa firmy<input value={companyName} onChange={(event) => { setCompanyName(event.target.value); if (!slug) setSlug(event.target.value.toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 18)); }} placeholder="Biuro rachunkowe Nova" /></label>
-              <label>Adres panelu<div className="workspace-domain"><span>https://</span><input value={slug} onChange={(event) => setSlug(event.target.value.toLowerCase().replace(/[^a-z0-9]/g, ""))} placeholder="nova" /><b>.rachuno.pl</b></div></label>
+              <label>Adres panelu<div className="workspace-domain"><span>https://</span><input value={slug} onChange={(event) => setSlug(event.target.value.toLowerCase().replace(/[^a-z0-9]/g, ""))} placeholder="nova" /><b>.epito.pl</b></div></label>
               <label>Administrator organizacji<input type="email" value={ownerEmail} onChange={(event) => setOwnerEmail(event.target.value)} placeholder="administrator@firma.pl" /></label>
               <label>Plan<select value={plan} onChange={(event) => setPlan(event.target.value)}><option>Starter</option><option>Pro</option><option>Enterprise</option></select></label>
               <div className="create-summary"><Check size={17} /><span>Powstanie odizolowana organizacja z własnymi użytkownikami, dokumentami i ustawieniami.</span></div>
@@ -219,11 +219,11 @@ export default function OwnerAdminPanel() {
 }
 
 function WorkspaceTable({ workspaces, onSelect }: { workspaces: Workspace[]; onSelect: (workspace: Workspace) => void }) {
-  return <div className="owner-workspace-table"><div className="owner-table-head"><span>Organizacja</span><span>Adres panelu</span><span>Użytkownicy</span><span>Plan</span><span>Status</span><span>MRR</span><span /></div>{workspaces.map((workspace) => <button className="workspace-row" key={workspace.id} onClick={() => onSelect(workspace)}><span className="workspace-logo">{workspace.name.split(" ").map((word) => word[0]).join("").slice(0, 2)}</span><span className="workspace-name"><strong>{workspace.name}</strong><small>{workspace.owner}</small></span><span className="workspace-url">{workspace.slug}.rachuno.pl</span><span className="workspace-users"><Users size={15} /> {workspace.users}</span><span>{workspace.plan}</span><span className={`workspace-status ${workspace.status.toLowerCase()}`}>{workspace.status}</span><strong>{workspace.mrr}</strong><MoreHorizontal size={19} /></button>)}</div>;
+  return <div className="owner-workspace-table"><div className="owner-table-head"><span>Organizacja</span><span>Adres panelu</span><span>Użytkownicy</span><span>Plan</span><span>Status</span><span>MRR</span><span /></div>{workspaces.map((workspace) => <button className="workspace-row" key={workspace.id} onClick={() => onSelect(workspace)}><span className="workspace-logo">{workspace.name.split(" ").map((word) => word[0]).join("").slice(0, 2)}</span><span className="workspace-name"><strong>{workspace.name}</strong><small>{workspace.owner}</small></span><span className="workspace-url">{workspace.slug}.epito.pl</span><span className="workspace-users"><Users size={15} /> {workspace.users}</span><span>{workspace.plan}</span><span className={`workspace-status ${workspace.status.toLowerCase()}`}>{workspace.status}</span><strong>{workspace.mrr}</strong><MoreHorizontal size={19} /></button>)}</div>;
 }
 
 function WorkspaceDrawer({ workspace, onClose }: { workspace: Workspace; onClose: () => void }) {
-  return <><motion.button className="drawer-backdrop" onClick={onClose} aria-label="Zamknij" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} /><motion.aside className="workspace-drawer" initial={{ x: "100%" }} animate={{ x: 0 }} exit={{ x: "100%" }} transition={{ type: "spring", damping: 28, stiffness: 260 }}><header><span className="workspace-logo large">{workspace.name.split(" ").map((word) => word[0]).join("").slice(0, 2)}</span><div><small>ORGANIZACJA</small><h2>{workspace.name}</h2><p>{workspace.slug}.rachuno.pl</p></div><button onClick={onClose}><X size={22} /></button></header><div className="drawer-status"><span className={`workspace-status ${workspace.status.toLowerCase()}`}>{workspace.status}</span><span>Plan {workspace.plan}</span></div><section><h3>Administrator</h3><div className="drawer-owner"><span>AK</span><div><strong>{workspace.owner}</strong><small>Właściciel organizacji</small></div></div></section><section><h3>Podsumowanie</h3><div className="drawer-stats"><div><small>Użytkownicy</small><strong>{workspace.users}</strong></div><div><small>Klienci biura</small><strong>{workspace.clients}</strong></div><div><small>MRR</small><strong>{workspace.mrr}</strong></div><div><small>Aktywność</small><strong>{workspace.lastSeen}</strong></div></div></section><section><h3>Dostęp supervisor</h3><p className="drawer-copy">Wejście zostanie zapisane w dzienniku razem z czasem, operatorem i zakresem wykonanych zmian.</p><Link className="supervisor-button" href="/panel"><ShieldCheck size={18} /> Wejdź do panelu <ArrowRight size={17} /></Link></section><footer><button><Copy size={17} /> Kopiuj adres</button><button className="danger">Wstrzymaj usługę</button></footer></motion.aside></>;
+  return <><motion.button className="drawer-backdrop" onClick={onClose} aria-label="Zamknij" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} /><motion.aside className="workspace-drawer" initial={{ x: "100%" }} animate={{ x: 0 }} exit={{ x: "100%" }} transition={{ type: "spring", damping: 28, stiffness: 260 }}><header><span className="workspace-logo large">{workspace.name.split(" ").map((word) => word[0]).join("").slice(0, 2)}</span><div><small>ORGANIZACJA</small><h2>{workspace.name}</h2><p>{workspace.slug}.epito.pl</p></div><button onClick={onClose}><X size={22} /></button></header><div className="drawer-status"><span className={`workspace-status ${workspace.status.toLowerCase()}`}>{workspace.status}</span><span>Plan {workspace.plan}</span></div><section><h3>Administrator</h3><div className="drawer-owner"><span>AK</span><div><strong>{workspace.owner}</strong><small>Właściciel organizacji</small></div></div></section><section><h3>Podsumowanie</h3><div className="drawer-stats"><div><small>Użytkownicy</small><strong>{workspace.users}</strong></div><div><small>Klienci biura</small><strong>{workspace.clients}</strong></div><div><small>MRR</small><strong>{workspace.mrr}</strong></div><div><small>Aktywność</small><strong>{workspace.lastSeen}</strong></div></div></section><section><h3>Dostęp supervisor</h3><p className="drawer-copy">Wejście zostanie zapisane w dzienniku razem z czasem, operatorem i zakresem wykonanych zmian.</p><Link className="supervisor-button" href="/panel"><ShieldCheck size={18} /> Wejdź do panelu <ArrowRight size={17} /></Link></section><footer><button><Copy size={17} /> Kopiuj adres</button><button className="danger">Wstrzymaj usługę</button></footer></motion.aside></>;
 }
 
 function OwnerUsers({ workspaces }: { workspaces: Workspace[] }) {
@@ -239,5 +239,5 @@ function AuditLog() {
 }
 
 function OwnerSettings() {
-  return <div className="admin-settings-grid"><article className="owner-card admin-settings-card"><Globe2 size={23} /><div><h3>Domena platformy</h3><p>Główna domena i adresy organizacji.</p><label><span>*. </span><input defaultValue="rachuno.pl" /></label></div></article><article className="owner-card admin-settings-card"><ShieldCheck size={23} /><div><h3>Polityka supervisorów</h3><p>Wymagaj uzasadnienia przed wejściem do organizacji.</p><input type="checkbox" defaultChecked /></div></article></div>;
+  return <div className="admin-settings-grid"><article className="owner-card admin-settings-card"><Globe2 size={23} /><div><h3>Domena platformy</h3><p>Główna domena i adresy organizacji.</p><label><span>*. </span><input defaultValue="epito.pl" /></label></div></article><article className="owner-card admin-settings-card"><ShieldCheck size={23} /><div><h3>Polityka supervisorów</h3><p>Wymagaj uzasadnienia przed wejściem do organizacji.</p><input type="checkbox" defaultChecked /></div></article></div>;
 }

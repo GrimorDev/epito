@@ -86,7 +86,7 @@ export default function ClientPanel() {
   const [darkMode, setDarkMode] = useState(false);
 
   useEffect(() => {
-    const savedTheme = window.localStorage.getItem("rachuno-theme");
+    const savedTheme = window.localStorage.getItem("epito-theme");
     const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
     setDarkMode(savedTheme ? savedTheme === "dark" : prefersDark);
   }, []);
@@ -111,7 +111,7 @@ export default function ClientPanel() {
   function toggleTheme() {
     setDarkMode((current) => {
       const next = !current;
-      window.localStorage.setItem("rachuno-theme", next ? "dark" : "light");
+      window.localStorage.setItem("epito-theme", next ? "dark" : "light");
       return next;
     });
   }
@@ -163,8 +163,8 @@ export default function ClientPanel() {
     <main className={darkMode ? "portal-shell theme-dark" : "portal-shell"}>
       <aside className={mobileMenu ? "portal-sidebar sidebar-open" : "portal-sidebar"}>
         <div className="portal-brand">
-          <span className="brand-mark">R</span>
-          <span><strong>RACHUNO</strong><small>Panel klienta</small></span>
+          <span className="brand-mark">E</span>
+          <span><strong>EPITO</strong><small>Panel klienta</small></span>
         </div>
         <button className="sidebar-close" type="button" onClick={() => setMobileMenu(false)} aria-label="Zamknij menu"><X size={24} /></button>
 
@@ -188,7 +188,7 @@ export default function ClientPanel() {
           <p>Twój opiekun odpowie na pytania dotyczące rozliczeń.</p>
           <button onClick={() => selectSection("Wiadomości")}>Napisz wiadomość</button>
         </div>
-        <Link className="back-to-site" href="/"><ArrowLeft size={16} /> Strona Rachuno</Link>
+        <Link className="back-to-site" href="/"><ArrowLeft size={16} /> Strona Epito</Link>
       </aside>
 
       {mobileMenu && <button className="sidebar-backdrop" aria-label="Zamknij menu" onClick={() => setMobileMenu(false)} />}
