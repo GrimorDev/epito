@@ -124,7 +124,7 @@ services:
     restart: unless-stopped
     init: true
     ports:
-      - "${EPITO_BIND_ADDRESS:-0.0.0.0}:${EPITO_PORT:-3000}:3000"
+      - "${EPITO_BIND_ADDRESS:-0.0.0.0}:${EPITO_PORT:-8063}:3000"
     environment:
       <<: *epito-runtime
     secrets:
