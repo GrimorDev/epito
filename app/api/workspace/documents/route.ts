@@ -31,6 +31,7 @@ export async function POST(request: NextRequest) {
 
   const form = await request.formData().catch(() => null);
   const file = form?.get("file");
+  const requestedCompanyId = form?.get("clientCompanyId");
   if (!(file instanceof File) || file.size < 1 || file.size > MAX_FILE_SIZE || !allowedMimeTypes.has(file.type)) {
     return NextResponse.json({ error: "Dodaj plik PDF, JPG, PNG, CSV lub XML o wielkości do 15 MB." }, { status: 400 });
   }
@@ -52,13 +53,22 @@ export async function POST(request: NextRequest) {
     fileWritten = true;
 
     const documentId = await withTenantTransaction(session.tenantId, session.userId, async (client) => {
-      let company = await client.query<{ id: string }>("select id from client_companies where deleted_at is null order by created_at limit 1");
-      if (!company.rowCount) {
-        company = await client.query<{ id: string }>(`
-          insert into client_companies (tenant_id, name, nip, email, status, metadata)
-          select id, legal_name, nip, $2, 'active', '{"primary":true}'::jsonb from tenants where id = $1
-          returning id
-        `, [session.tenantId, session.email]);
+      let company: { rows: { id: string }[]; rowCount: number | null };
+      if (typeof requestedCompanyId === "string" && requestedCompanyId) {
+        company = await client.query<{ id: string }>(
+          "select id from client_companies where id = $1 and deleted_at is null",
+          [requestedCompanyId],
+        );
+        if (!company.rowCount) throw new Error("CLIENT_NOT_FOUND");
+      } else {
+        company = await client.query<{ id: string }>("select id from client_companies where deleted_at is null order by created_at limit 1");
+        if (!company.rowCount) {
+          company = await client.query<{ id: string }>(`
+            insert into client_companies (tenant_id, name, nip, email, status, metadata)
+            select id, legal_name, nip, $2, 'active', '{"primary":true}'::jsonb from tenants where id = $1
+            returning id
+          `, [session.tenantId, session.email]);
+        }
       }
       const created = await client.query<{ id: string }>(`
         insert into documents (
@@ -96,6 +106,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: true, documentId, analysis: "queued" }, { status: 201 });
   } catch (error) {
     if (fileWritten) await rm(absolutePath, { force: true }).catch(() => undefined);
+    if (error instanceof Error && error.message === "CLIENT_NOT_FOUND") {
+      return NextResponse.json({ error: "Nie znaleziono firmy klienta." }, { status: 404 });
+    }
     console.error("Document upload failed", error);
     return NextResponse.json({ error: "Nie udało się zapisać dokumentu." }, { status: 500 });
   }
