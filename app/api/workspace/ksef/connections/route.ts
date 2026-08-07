@@ -80,6 +80,11 @@ export async function POST(request: NextRequest) {
            token_ciphertext = excluded.token_ciphertext,
            status = 'disconnected',
            last_error = null,
+           last_synced_at = null,
+           access_token_ciphertext = null,
+           access_token_expires_at = null,
+           refresh_token_ciphertext = null,
+           refresh_token_expires_at = null,
            updated_at = now()
          returning id`,
         [session.tenantId, clientCompanyId, environment, nip, tokenCiphertext, session.userId],
