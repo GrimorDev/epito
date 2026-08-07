@@ -121,7 +121,6 @@ export async function POST(request: NextRequest) {
               imported_at: new Date().toISOString(),
               buyer_nip: invoice.buyerNip,
               buyer_name: invoice.buyerName,
-              payment_due_date: invoice.paymentDueDate,
             },
           }),
         ],
