@@ -64,6 +64,7 @@ type DocumentsProps = {
   documents: WorkspaceDocument[];
   setDocuments: Dispatch<SetStateAction<WorkspaceDocument[]>>;
   onUpload: (event: ChangeEvent<HTMLInputElement>) => void;
+  onOpenImport?: () => void;
   production?: boolean;
   onChanged?: () => Promise<void> | void;
   onNotice?: (message: string) => void;
@@ -83,7 +84,7 @@ function DocumentViewer({ document, production, fullscreen = false }: { document
   return <iframe className={fullscreen ? "real-document-frame fullscreen" : "real-document-frame"} src={source} title={`Podgląd dokumentu ${document.name}`} />;
 }
 
-export function DocumentsWorkspace({ documents, setDocuments, onUpload, production = false, onChanged, onNotice }: DocumentsProps) {
+export function DocumentsWorkspace({ documents, setDocuments, onUpload, onOpenImport, production = false, onChanged, onNotice }: DocumentsProps) {
   const [year, setYear] = useState(() => documents[0]?.year || new Date().getFullYear());
   const [month, setMonth] = useState(() => documents[0]?.month || months[new Date().getMonth()]);
   const [category, setCategory] = useState("Wszystkie");
@@ -198,7 +199,11 @@ export function DocumentsWorkspace({ documents, setDocuments, onUpload, producti
     <section className="subpage document-system-page">
       <div className="page-heading">
         <div><p>Centrum dokumentów</p><h1>Dokumenty</h1><span>Porządkuj, przeglądaj i edytuj pliki bez opuszczania panelu.</span></div>
-        <label className="upload-button"><Upload size={18} /> Dodaj dokument<input type="file" onChange={onUpload} /></label>
+        {production && onOpenImport ? (
+          <button className="upload-button" type="button" onClick={onOpenImport}><Upload size={18} /> Dodaj dokument</button>
+        ) : (
+          <label className="upload-button"><Upload size={18} /> Dodaj dokument<input type="file" onChange={onUpload} /></label>
+        )}
       </div>
 
       <div className="document-periods">
@@ -300,6 +305,75 @@ export function DocumentsWorkspace({ documents, setDocuments, onUpload, producti
         {editingDocument ? <motion.div className="document-modal-backdrop" role="dialog" aria-modal="true" aria-label="Edycja danych dokumentu" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}><motion.form className="document-editor-modal" onSubmit={(event) => { event.preventDefault(); void saveEdit(); }} initial={{ scale: .97, y: 16 }} animate={{ scale: 1, y: 0 }} exit={{ scale: .97, y: 12 }}><button className="modal-close" type="button" onClick={() => setEditingId(null)} aria-label="Zamknij edycję"><X size={22} /></button><span className="modal-kicker">DANE DOKUMENTU</span><h2>Sprawdź i popraw odczyt</h2><p>Automatyczny odczyt jest pomocą. Zapis ręczny ma pierwszeństwo i trafia do rejestru zmian.</p><label>Nazwa pliku<input value={draftName} onChange={(event) => setDraftName(event.target.value)} required maxLength={240} /></label><div className="document-editor-grid"><label>Folder<select value={draftCategory} onChange={(event) => setDraftCategory(event.target.value)}>{categoryOptions.map(([code, label]) => <option value={code} key={code}>{label}</option>)}</select></label><label>Status<select value={draftStatus} onChange={(event) => setDraftStatus(event.target.value)}><option value="verified">Sprawdzony</option><option value="requires_action">Wymaga uzupełnienia</option></select></label><label>Kwota brutto<input inputMode="decimal" value={draftAmount} onChange={(event) => setDraftAmount(event.target.value)} placeholder="0,00" /></label><label>Waluta<select value={draftCurrency} onChange={(event) => setDraftCurrency(event.target.value)}><option>PLN</option><option>EUR</option><option>USD</option><option>GBP</option><option>CHF</option></select></label><label>Data wystawienia<input type="date" value={draftIssuedAt} onChange={(event) => setDraftIssuedAt(event.target.value)} /></label></div><button className="button button-primary button-wide" type="submit" disabled={editPending}>{editPending ? "Zapisywanie" : "Zapisz dane dokumentu"}</button></motion.form></motion.div> : null}
       </AnimatePresence>
     </section>
+  );
+}
+
+export function DocumentImportModal({
+  companies,
+  onClose,
+  onImported,
+}: {
+  companies: Array<{ id: string; name: string }>;
+  onClose: () => void;
+  onImported: (message: string) => void;
+}) {
+  const [mode, setMode] = useState<"single" | "jpk_fa">("single");
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState("");
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setPending(true);
+    setError("");
+    const endpoint = mode === "jpk_fa" ? "/api/workspace/documents/jpk-fa" : "/api/workspace/documents";
+    try {
+      const response = await fetch(endpoint, { method: "POST", body: new FormData(event.currentTarget) });
+      const payload = (await response.json()) as { error?: string; imported?: number; skipped?: number };
+      if (!response.ok) throw new Error(payload.error || "Nie udało się przesłać pliku.");
+      onImported(
+        mode === "jpk_fa"
+          ? `Faktury zostały zaimportowane: ${payload.imported ?? 0}${payload.skipped ? ` (pominięto ${payload.skipped} już istniejących)` : ""}.`
+          : "Dokument został zapisany. Trwa odczyt kwoty i danych faktury.",
+      );
+      onClose();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Nie udało się przesłać pliku.");
+    } finally {
+      setPending(false);
+    }
+  }
+
+  return (
+    <AnimatePresence>
+      <motion.div className="document-modal-backdrop" role="dialog" aria-modal="true" aria-label="Dodaj dokument" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+        <motion.form className="document-editor-modal" onSubmit={handleSubmit} initial={{ scale: 0.97, y: 16 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.97, y: 12 }}>
+          <button className="modal-close" type="button" onClick={onClose} aria-label="Zamknij"><X size={22} /></button>
+          <span className="modal-kicker">DOKUMENTY</span>
+          <h2>Dodaj dokument</h2>
+          <div className="import-mode-toggle">
+            <button type="button" className={mode === "single" ? "active" : ""} onClick={() => setMode("single")}>Zwykły dokument</button>
+            <button type="button" className={mode === "jpk_fa" ? "active" : ""} onClick={() => setMode("jpk_fa")}>Import JPK_FA</button>
+          </div>
+          <label>
+            Klient
+            <select name="clientCompanyId" required defaultValue="">
+              <option value="" disabled>Wybierz firmę</option>
+              {companies.map((company) => <option key={company.id} value={company.id}>{company.name}</option>)}
+            </select>
+          </label>
+          {mode === "single" ? (
+            <label>Plik (PDF, JPG, PNG, CSV, XML)<input name="file" type="file" accept=".pdf,.jpg,.jpeg,.png,.csv,.xml" required /></label>
+          ) : (
+            <label>Plik JPK_FA (XML) — z Comarch, Insert, Symfonii lub innego programu księgowego<input name="file" type="file" accept=".xml,text/xml,application/xml" required /></label>
+          )}
+          {error ? <p className="form-error">{error}</p> : null}
+          {!companies.length ? <p className="form-error">Najpierw dodaj klienta w zakładce Klienci.</p> : null}
+          <button className="button button-primary button-wide" type="submit" disabled={pending || !companies.length}>
+            {pending ? "Wysyłanie…" : mode === "jpk_fa" ? "Zaimportuj" : "Dodaj dokument"}
+          </button>
+        </motion.form>
+      </motion.div>
+    </AnimatePresence>
   );
 }
 
