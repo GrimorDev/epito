@@ -5,6 +5,7 @@ WORKDIR /app
 ENV NEXT_TELEMETRY_DISABLED=1
 
 FROM base AS dependencies
+ENV PUPPETEER_CACHE_DIR=/app/.cache/puppeteer
 COPY package.json package-lock.json ./
 RUN npm ci
 
@@ -19,11 +20,24 @@ WORKDIR /app
 ENV NODE_ENV=production \
     NEXT_TELEMETRY_DISABLED=1 \
     HOSTNAME=0.0.0.0 \
-    PORT=3000
+    PORT=3000 \
+    PUPPETEER_CACHE_DIR=/app/.cache/puppeteer
 
 LABEL org.opencontainers.image.title="Epito" \
       org.opencontainers.image.description="Portal klienta dla biur rachunkowych" \
       org.opencontainers.image.source="https://github.com/GrimorDev/epito"
+
+# Runtime shared libraries for the headless Chromium that Puppeteer downloaded
+# in the dependencies stage (used to render KSeF invoice PDFs). No chromium
+# apt package is installed here — only its .so dependencies.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates fonts-liberation libasound2 libatk-bridge2.0-0 libatk1.0-0 \
+    libcairo2 libcups2 libdbus-1-3 libexpat1 libfontconfig1 libgbm1 libglib2.0-0 \
+    libgtk-3-0 libnspr4 libnss3 libpango-1.0-0 libpangocairo-1.0-0 libx11-6 \
+    libx11-xcb1 libxcb1 libxcomposite1 libxcursor1 libxdamage1 libxext6 \
+    libxfixes3 libxi6 libxrandr2 libxrender1 libxshmfence1 libxss1 libxtst6 \
+    wget xdg-utils \
+    && rm -rf /var/lib/apt/lists/*
 
 RUN groupadd --system --gid 1001 nodejs \
     && useradd --system --uid 1001 --gid nodejs nextjs \
@@ -35,6 +49,7 @@ COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 COPY --from=builder --chown=nextjs:nodejs /app/scripts ./scripts
 COPY --from=builder --chown=nextjs:nodejs /app/db/postgres ./db/postgres
+COPY --from=dependencies --chown=nextjs:nodejs /app/.cache/puppeteer ./.cache/puppeteer
 
 USER nextjs
 

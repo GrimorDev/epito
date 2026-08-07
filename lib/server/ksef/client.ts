@@ -347,6 +347,34 @@ function findNip(node: unknown, subjectKey: string): string | null {
   return typeof nip === "string" ? nip.trim() : null;
 }
 
+function deepFindAll(node: unknown, key: string): unknown[] {
+  const results: unknown[] = [];
+  function walk(current: unknown) {
+    if (current === null || typeof current !== "object") return;
+    if (Array.isArray(current)) {
+      for (const item of current) walk(item);
+      return;
+    }
+    for (const [entryKey, value] of Object.entries(current as Record<string, unknown>)) {
+      if (entryKey === key) {
+        if (Array.isArray(value)) results.push(...value);
+        else results.push(value);
+      } else {
+        walk(value);
+      }
+    }
+  }
+  walk(node);
+  return results;
+}
+
+function findAddress(node: unknown): string | null {
+  const lines = [findFirstString(node, ["AdresL1"]), findFirstString(node, ["AdresL2"])].filter(
+    (line): line is string => Boolean(line),
+  );
+  return lines.length ? lines.join(", ") : null;
+}
+
 function findFirstIsoDate(node: unknown): string | null {
   if (typeof node === "string") {
     const match = node.match(/^\d{4}-\d{2}-\d{2}/);
@@ -386,6 +414,69 @@ export function parseInvoiceSummary(xml: string): ParsedInvoiceSummary {
     currency: findFirstString(parsed, ["KodWaluty"]),
     sellerNip: findNip(parsed, "Podmiot1"),
     buyerNip: findNip(parsed, "Podmiot2"),
+    paymentDueDate: findFirstIsoDate(deepFind(parsed, "TerminPlatnosci")),
+  };
+}
+
+export type InvoiceLineItem = {
+  name: string | null;
+  quantity: string | null;
+  unit: string | null;
+  netUnitPrice: number | null;
+  netAmount: number | null;
+  vatRate: string | null;
+};
+
+export type InvoiceDetails = {
+  invoiceNumber: string | null;
+  issuedAt: string | null;
+  currency: string | null;
+  seller: { nip: string | null; name: string | null; address: string | null };
+  buyer: { nip: string | null; name: string | null; address: string | null };
+  lines: InvoiceLineItem[];
+  grossAmount: number | null;
+  paymentDueDate: string | null;
+};
+
+// Field codes beyond P_1/P_15/KodWaluty (confirmed against real synced test
+// invoices) are best-effort based on the general FA(2) schema and haven't all
+// been verified against a real invoice — a missing field resolves to null/an
+// empty list rather than breaking the whole preview.
+export function parseInvoiceDetails(xml: string): InvoiceDetails {
+  let parsed: unknown;
+  try {
+    parsed = xmlParser.parse(xml);
+  } catch (error) {
+    throw new KsefApiError("Nie udało się przetworzyć XML faktury z KSeF.", "invoice.parse", undefined, error);
+  }
+
+  const seller = deepFind(parsed, "Podmiot1");
+  const buyer = deepFind(parsed, "Podmiot2");
+  const lineNodes = deepFindAll(parsed, "FaWiersz");
+
+  return {
+    invoiceNumber: findFirstString(parsed, ["P_2"]),
+    issuedAt: findFirstString(parsed, ["P_1"]),
+    currency: findFirstString(parsed, ["KodWaluty"]),
+    seller: {
+      nip: findNip(parsed, "Podmiot1"),
+      name: findFirstString(seller, ["Nazwa", "ImieNazwisko"]),
+      address: findAddress(seller),
+    },
+    buyer: {
+      nip: findNip(parsed, "Podmiot2"),
+      name: findFirstString(buyer, ["Nazwa", "ImieNazwisko"]),
+      address: findAddress(buyer),
+    },
+    lines: lineNodes.map((line) => ({
+      name: findFirstString(line, ["P_7"]),
+      quantity: findFirstString(line, ["P_8B"]),
+      unit: findFirstString(line, ["P_8A"]),
+      netUnitPrice: findFirstNumber(line, ["P_9A"]),
+      netAmount: findFirstNumber(line, ["P_11"]),
+      vatRate: findFirstString(line, ["P_12"]),
+    })),
+    grossAmount: findFirstNumber(parsed, ["P_15"]),
     paymentDueDate: findFirstIsoDate(deepFind(parsed, "TerminPlatnosci")),
   };
 }

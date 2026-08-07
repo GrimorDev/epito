@@ -4,6 +4,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSession, isSameOrigin } from "@/lib/server/auth";
 import { withTenantTransaction } from "@/lib/server/database";
 import { enqueueBackgroundJob } from "@/lib/server/queues";
+import { parseInvoiceDetails } from "@/lib/server/ksef/client";
+import { escapeHtml, renderInvoiceHtml } from "@/lib/server/invoice-html";
+import { renderHtmlToPdf } from "@/lib/server/pdf";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -18,42 +21,13 @@ function canEdit(role: string | null, platformRole: string) {
   return platformRole === "supervisor" || ["owner", "admin", "accountant", "employee"].includes(role || "");
 }
 
-// The CSP below ("sandbox; default-src 'none'") is intentionally strict for
-// documents rendered inline (untrusted uploads shown in an iframe), but it
-// also blocks the browser's own XML tree-view stylesheet, so raw XML degrades
-// to one line of concatenated text. Indenting it and serving as text/plain
-// makes it readable without loosening that CSP.
-function xmlLineDepthDelta(trimmed: string): -1 | 0 | 1 {
-  if (/^<\?/.test(trimmed) || /^<!--/.test(trimmed) || /\/>$/.test(trimmed)) return 0;
-  if (/^<([a-zA-Z_][\w:.-]*)(?:\s[^>]*)?>.*<\/\1>$/.test(trimmed)) return 0;
-  if (/^<\//.test(trimmed)) return -1;
-  if (/^</.test(trimmed)) return 1;
-  return 0;
-}
-
-function formatXmlForInlinePreview(xml: string): string {
-  const withBreaks = xml.replace(/>\s*</g, ">\n<").trim();
-  let depth = 0;
-  return withBreaks
-    .split("\n")
-    .map((line) => {
-      const trimmed = line.trim();
-      const delta = xmlLineDepthDelta(trimmed);
-      if (delta === -1) depth = Math.max(0, depth - 1);
-      const indented = "  ".repeat(depth) + trimmed;
-      if (delta === 1) depth += 1;
-      return indented;
-    })
-    .join("\n");
-}
-
 export async function GET(request: NextRequest, context: Context) {
   const session = await getSession(request);
   if (!session?.tenantId) return NextResponse.json({ error: "Zaloguj się ponownie." }, { status: 401 });
   const { documentId } = await context.params;
   const document = await withTenantTransaction(session.tenantId, session.userId, async (client) => {
-    const result = await client.query<{ name: string; storage_key: string; mime_type: string }>(
-      "select name, storage_key, mime_type from documents where id = $1 and deleted_at is null",
+    const result = await client.query<{ name: string; storage_key: string; mime_type: string; ksef_number: string | null }>(
+      "select name, storage_key, mime_type, ksef_number from documents where id = $1 and deleted_at is null",
       [documentId],
     );
     return result.rows[0] || null;
@@ -66,15 +40,39 @@ export async function GET(request: NextRequest, context: Context) {
   try {
     const rawContents = await readFile(/* turbopackIgnore: true */ absolutePath);
     const safeName = document.name.replace(/["\r\n]/g, "_");
+    const isXml = document.mime_type.includes("xml");
+    const wantsPdf = request.nextUrl.searchParams.get("format") === "pdf";
     const disposition = request.nextUrl.searchParams.get("inline") === "1" ? "inline" : "attachment";
-    const isInlineXml = disposition === "inline" && document.mime_type.includes("xml");
-    const contents = isInlineXml
-      ? Buffer.from(formatXmlForInlinePreview(rawContents.toString("utf8")), "utf8")
-      : rawContents;
-    const contentType = isInlineXml ? "text/plain; charset=utf-8" : document.mime_type;
-    return new NextResponse(contents, { headers: {
-      "Content-Type": contentType,
-      "Content-Length": String(contents.length),
+
+    if (isXml && (disposition === "inline" || wantsPdf)) {
+      let html: string;
+      try {
+        html = renderInvoiceHtml(parseInvoiceDetails(rawContents.toString("utf8")), document.ksef_number);
+      } catch {
+        html = `<!doctype html><meta charset="utf-8"><pre style="white-space:pre-wrap;font-family:monospace;">${escapeHtml(rawContents.toString("utf8"))}</pre>`;
+      }
+
+      if (wantsPdf) {
+        const pdf = await renderHtmlToPdf(html);
+        return new NextResponse(pdf as BodyInit, { headers: {
+          "Content-Type": "application/pdf",
+          "Content-Length": String(pdf.length),
+          "Content-Disposition": `attachment; filename="${safeName.replace(/\.xml$/i, "")}.pdf"`,
+          "Cache-Control": "private, no-store",
+        } });
+      }
+
+      return new NextResponse(html, { headers: {
+        "Content-Type": "text/html; charset=utf-8",
+        "Cache-Control": "private, no-store",
+        "Content-Security-Policy": "sandbox; default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'",
+        "X-Content-Type-Options": "nosniff",
+      } });
+    }
+
+    return new NextResponse(rawContents, { headers: {
+      "Content-Type": document.mime_type,
+      "Content-Length": String(rawContents.length),
       "Content-Disposition": `${disposition}; filename="${safeName}"; filename*=UTF-8''${encodeURIComponent(document.name)}`,
       "Cache-Control": "private, no-store",
       "Content-Security-Policy": "sandbox; default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'",
