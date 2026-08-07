@@ -71,6 +71,19 @@ function isoDateOnly(value) {
   return null;
 }
 
+function addDaysIso(isoDate, days) {
+  const base = isoDate ? new Date(`${isoDate}T00:00:00Z`) : new Date();
+  base.setUTCDate(base.getUTCDate() + days);
+  return base.toISOString().slice(0, 10);
+}
+
+const POLISH_MONTHS = ["styczeń", "luty", "marzec", "kwiecień", "maj", "czerwiec", "lipiec", "sierpień", "wrzesień", "październik", "listopad", "grudzień"];
+
+function periodLabel(isoDate) {
+  const date = isoDate ? new Date(`${isoDate}T00:00:00Z`) : new Date();
+  return `${POLISH_MONTHS[date.getUTCMonth()]} ${date.getUTCFullYear()}`;
+}
+
 function yearMonthOf(isoDate) {
   const parsed = isoDate ? new Date(isoDate) : new Date();
   const valid = Number.isNaN(parsed.getTime()) ? new Date() : parsed;
@@ -188,6 +201,7 @@ async function handleKsefSync(job) {
       const amount = invoice.grossAmount ?? summary.grossAmount ?? null;
       const currency = invoice.currency ?? summary.currency ?? "PLN";
       const status = amount !== null && issuedAt !== null ? "verified" : "requires_action";
+      const dueDate = invoice.category === "costs" ? isoDateOnly(summary.paymentDueDate) || addDaysIso(issuedAt, 14) : null;
 
       const stored = await saveInvoiceFile(tenantId, xml, issuedAt);
       const checksum = createHash("sha256").update(stored.buffer).digest("hex");
@@ -205,17 +219,19 @@ async function handleKsefSync(job) {
         issuedAt,
         amount,
         currency,
+        dueDate,
       });
     }
 
     await withTenant(tenantId, actorUserId, async (client) => {
       for (const document of documentsToInsert) {
-        await client.query(
+        const inserted = await client.query(
           `insert into documents (
             tenant_id, client_company_id, created_by, name, category, source, status,
             storage_key, mime_type, file_size, checksum_sha256, document_year, document_month,
             issued_at, amount, currency, ksef_number, structured_data
-          ) values ($1, $2, $3, $4, $5, 'ksef', $6, $7, 'application/xml', $8, $9, $10, $11, $12, $13, $14, $15, $16::jsonb)`,
+          ) values ($1, $2, $3, $4, $5, 'ksef', $6, $7, 'application/xml', $8, $9, $10, $11, $12, $13, $14, $15, $16::jsonb)
+          returning id`,
           [
             tenantId,
             connectionRow.client_company_id,
@@ -235,6 +251,25 @@ async function handleKsefSync(job) {
             JSON.stringify({ ksef: { synced_at: new Date().toISOString(), environment: connectionRow.environment } }),
           ],
         );
+
+        if (document.category === "costs" && document.amount !== null) {
+          await client.query(
+            `insert into payments (
+              tenant_id, client_company_id, document_id, tax_type, period_label,
+              amount, currency, due_date, status, metadata
+            ) values ($1, $2, $3, 'invoice', $4, $5, $6, $7, 'due', $8::jsonb)`,
+            [
+              tenantId,
+              connectionRow.client_company_id,
+              inserted.rows[0].id,
+              periodLabel(document.issuedAt),
+              document.amount,
+              document.currency,
+              document.dueDate,
+              JSON.stringify({ source: "ksef", ksef_number: document.ksefNumber }),
+            ],
+          );
+        }
       }
 
       await client.query(

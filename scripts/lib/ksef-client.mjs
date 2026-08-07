@@ -274,6 +274,27 @@ function findNip(node, subjectKey) {
   return typeof nip === "string" ? nip.trim() : null;
 }
 
+function findFirstIsoDate(node) {
+  if (typeof node === "string") {
+    const match = node.match(/^\d{4}-\d{2}-\d{2}/);
+    return match ? match[0] : null;
+  }
+  if (Array.isArray(node)) {
+    for (const item of node) {
+      const found = findFirstIsoDate(item);
+      if (found) return found;
+    }
+    return null;
+  }
+  if (node && typeof node === "object") {
+    for (const value of Object.values(node)) {
+      const found = findFirstIsoDate(value);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
 // FA(2)/FA(3) field names (P_1, P_15, Podmiot1/Podmiot2, KodWaluty) are best-effort
 // based on the published Polish e-invoice schema, used only as a fallback when
 // the structured invoice-metadata response (issueDate/grossAmount/currency) is
@@ -292,5 +313,6 @@ export function parseInvoiceSummary(xml) {
     currency: findFirstString(parsed, ["KodWaluty"]),
     sellerNip: findNip(parsed, "Podmiot1"),
     buyerNip: findNip(parsed, "Podmiot2"),
+    paymentDueDate: findFirstIsoDate(deepFind(parsed, "TerminPlatnosci")),
   };
 }
