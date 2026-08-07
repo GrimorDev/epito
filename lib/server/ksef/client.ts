@@ -1,5 +1,14 @@
 import { X509Certificate, constants as cryptoConstants, publicEncrypt, type KeyObject } from "node:crypto";
-import { XMLParser } from "fast-xml-parser";
+import {
+  deepFind,
+  deepFindAll,
+  findAddress,
+  findFirstIsoDate,
+  findFirstNumber,
+  findFirstString,
+  findNip,
+  lenientXmlParser,
+} from "../xml-utils";
 
 // Endpoint paths and payload shapes below were verified against the Ministry
 // of Finance's published OpenAPI spec (github.com/CIRFMF/ksef-api/open-api.json).
@@ -300,102 +309,6 @@ export type ParsedInvoiceSummary = {
   paymentDueDate: string | null;
 };
 
-// parseTagValue: false keeps every leaf as a raw string — otherwise
-// fast-xml-parser silently coerces all-digit values (NIP, KSeF numbers) into
-// JS numbers, which would corrupt any identifier starting with "0".
-const xmlParser = new XMLParser({ ignoreAttributes: false, removeNSPrefix: true, parseTagValue: false });
-
-function deepFind(node: unknown, key: string): unknown {
-  if (node === null || typeof node !== "object") return undefined;
-  if (Array.isArray(node)) {
-    for (const item of node) {
-      const found = deepFind(item, key);
-      if (found !== undefined) return found;
-    }
-    return undefined;
-  }
-  const record = node as Record<string, unknown>;
-  if (key in record) return record[key];
-  for (const value of Object.values(record)) {
-    const found = deepFind(value, key);
-    if (found !== undefined) return found;
-  }
-  return undefined;
-}
-
-function findFirstString(node: unknown, keys: string[]): string | null {
-  for (const key of keys) {
-    const value = deepFind(node, key);
-    if (typeof value === "string" && value.trim()) return value.trim();
-    if (typeof value === "number") return String(value);
-  }
-  return null;
-}
-
-function findFirstNumber(node: unknown, keys: string[]): number | null {
-  for (const key of keys) {
-    const value = deepFind(node, key);
-    if (typeof value === "number") return value;
-    if (typeof value === "string" && value.trim() && !Number.isNaN(Number(value))) return Number(value);
-  }
-  return null;
-}
-
-function findNip(node: unknown, subjectKey: string): string | null {
-  const subject = deepFind(node, subjectKey);
-  const nip = deepFind(subject, "NIP");
-  return typeof nip === "string" ? nip.trim() : null;
-}
-
-function deepFindAll(node: unknown, key: string): unknown[] {
-  const results: unknown[] = [];
-  function walk(current: unknown) {
-    if (current === null || typeof current !== "object") return;
-    if (Array.isArray(current)) {
-      for (const item of current) walk(item);
-      return;
-    }
-    for (const [entryKey, value] of Object.entries(current as Record<string, unknown>)) {
-      if (entryKey === key) {
-        if (Array.isArray(value)) results.push(...value);
-        else results.push(value);
-      } else {
-        walk(value);
-      }
-    }
-  }
-  walk(node);
-  return results;
-}
-
-function findAddress(node: unknown): string | null {
-  const lines = [findFirstString(node, ["AdresL1"]), findFirstString(node, ["AdresL2"])].filter(
-    (line): line is string => Boolean(line),
-  );
-  return lines.length ? lines.join(", ") : null;
-}
-
-function findFirstIsoDate(node: unknown): string | null {
-  if (typeof node === "string") {
-    const match = node.match(/^\d{4}-\d{2}-\d{2}/);
-    return match ? match[0] : null;
-  }
-  if (Array.isArray(node)) {
-    for (const item of node) {
-      const found = findFirstIsoDate(item);
-      if (found) return found;
-    }
-    return null;
-  }
-  if (node && typeof node === "object") {
-    for (const value of Object.values(node)) {
-      const found = findFirstIsoDate(value);
-      if (found) return found;
-    }
-  }
-  return null;
-}
-
 // FA(2)/FA(3) field names (P_1, P_15, Podmiot1/Podmiot2, KodWaluty) are best-effort
 // based on the published Polish e-invoice schema, used only as a fallback when
 // the structured invoice-metadata response (issueDate/grossAmount/currency) is
@@ -403,7 +316,7 @@ function findFirstIsoDate(node: unknown): string | null {
 export function parseInvoiceSummary(xml: string): ParsedInvoiceSummary {
   let parsed: unknown;
   try {
-    parsed = xmlParser.parse(xml);
+    parsed = lenientXmlParser.parse(xml);
   } catch (error) {
     throw new KsefApiError("Nie udało się przetworzyć XML faktury z KSeF.", "invoice.parse", undefined, error);
   }
@@ -445,7 +358,7 @@ export type InvoiceDetails = {
 export function parseInvoiceDetails(xml: string): InvoiceDetails {
   let parsed: unknown;
   try {
-    parsed = xmlParser.parse(xml);
+    parsed = lenientXmlParser.parse(xml);
   } catch (error) {
     throw new KsefApiError("Nie udało się przetworzyć XML faktury z KSeF.", "invoice.parse", undefined, error);
   }
@@ -455,7 +368,7 @@ export function parseInvoiceDetails(xml: string): InvoiceDetails {
   const lineNodes = deepFindAll(parsed, "FaWiersz");
 
   return {
-    invoiceNumber: findFirstString(parsed, ["P_2"]),
+    invoiceNumber: findFirstString(parsed, ["P_2A", "P_2"]),
     issuedAt: findFirstString(parsed, ["P_1"]),
     currency: findFirstString(parsed, ["KodWaluty"]),
     seller: {

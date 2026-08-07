@@ -15,6 +15,7 @@
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
     "test:invoice": "node --test tests/invoice-extraction.test.mjs",
     "test:ksef": "node --test tests/ksef.test.mjs",
+    "test:jpk-fa": "tsx --test tests/jpk-fa.test.mjs",
     "db:generate:d1": "drizzle-kit generate",
     "db:migrate:postgres": "node scripts/migrate.mjs"
   },
@@ -48,6 +49,7 @@
     "eslint-config-next": "16.3.0",
     "react-server-dom-webpack": "19.2.6",
     "tailwindcss": "4.2.1",
+    "tsx": "^4.23.11",
     "typescript": "5.9.3",
     "vinext": "0.0.50",
     "vite": "8.0.13",
