@@ -135,21 +135,27 @@ async function handleKsefSync(job) {
 
   try {
     const auth = await authenticate(connectionRow);
-    const dateFrom = connectionRow.last_synced_at ? new Date(connectionRow.last_synced_at) : new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
     const dateTo = new Date();
+    const maxLookback = new Date(dateTo);
+    maxLookback.setUTCMonth(maxLookback.getUTCMonth() - 3, maxLookback.getUTCDate() + 1);
+    const lastSynced = connectionRow.last_synced_at ? new Date(connectionRow.last_synced_at) : null;
+    const dateFrom = lastSynced && lastSynced > maxLookback ? lastSynced : maxLookback;
 
     const newInvoices = [];
-    let pageOffset = 0;
-    const maxPages = 20;
-    for (let page = 0; page < maxPages; page += 1) {
-      const { invoices, hasMore } = await queryInvoiceMetadata(connectionRow.environment, auth.accessToken, {
-        dateFrom,
-        dateTo,
-        pageOffset,
-      });
-      newInvoices.push(...invoices);
-      if (!hasMore || invoices.length === 0) break;
-      pageOffset += invoices.length;
+    for (const [subjectType, category] of [["Subject1", "sales"], ["Subject2", "costs"]]) {
+      let pageOffset = 0;
+      const maxPages = 20;
+      for (let page = 0; page < maxPages; page += 1) {
+        const { invoices, hasMore } = await queryInvoiceMetadata(connectionRow.environment, auth.accessToken, {
+          subjectType,
+          dateFrom,
+          dateTo,
+          pageOffset,
+        });
+        for (const invoice of invoices) newInvoices.push({ ...invoice, category });
+        if (!hasMore || invoices.length === 0) break;
+        pageOffset += invoices.length;
+      }
     }
 
     const documentsToInsert = [];
@@ -171,18 +177,16 @@ async function handleKsefSync(job) {
         continue;
       }
 
-      let summary = { issuedAt: null, grossAmount: null, currency: null, sellerNip: null, buyerNip: null };
+      let summary = { issuedAt: null, grossAmount: null, currency: null };
       try {
         summary = parseInvoiceSummary(xml);
       } catch (error) {
         console.warn(`Failed to parse KSeF invoice ${invoice.ksefNumber}, storing raw XML for manual review`, error);
       }
 
-      const issuedAt = isoDateOnly(summary.issuedAt) || isoDateOnly(invoice.issueDate);
-      const amount = summary.grossAmount ?? invoice.grossAmount ?? null;
-      const currency = summary.currency ?? invoice.currency ?? "PLN";
-      const sellerNip = summary.sellerNip ?? invoice.sellerNip;
-      const category = sellerNip && sellerNip === connectionRow.nip ? "sales" : "costs";
+      const issuedAt = isoDateOnly(invoice.issueDate) || isoDateOnly(summary.issuedAt);
+      const amount = invoice.grossAmount ?? summary.grossAmount ?? null;
+      const currency = invoice.currency ?? summary.currency ?? "PLN";
       const status = amount !== null && issuedAt !== null ? "verified" : "requires_action";
 
       const stored = await saveInvoiceFile(tenantId, xml, issuedAt);
@@ -191,7 +195,7 @@ async function handleKsefSync(job) {
       documentsToInsert.push({
         ksefNumber: invoice.ksefNumber,
         name: `Faktura KSeF ${invoice.ksefNumber}`,
-        category,
+        category: invoice.category,
         status,
         storageKey: stored.relativeKey,
         fileSize: stored.buffer.length,

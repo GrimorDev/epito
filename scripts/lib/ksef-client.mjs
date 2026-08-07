@@ -1,12 +1,11 @@
-import { X509Certificate, constants as cryptoConstants, createPublicKey, publicEncrypt } from "node:crypto";
+import { X509Certificate, constants as cryptoConstants, publicEncrypt } from "node:crypto";
 import { XMLParser } from "fast-xml-parser";
 
 // Mirrors lib/server/ksef/client.ts (kept as plain JS so the worker can run
 // without a TypeScript build step, same convention as document-worker.mjs).
-// Endpoint paths follow the flow documented in the Ministry of Finance's
-// official KSeF API 2.0 integration guide (github.com/CIRFMF/ksef-api) and
-// should be re-checked against that repo's open-api.json before going live
-// with a new KSeF API release.
+// Endpoint paths and payload shapes were verified against the Ministry of
+// Finance's published OpenAPI spec (github.com/CIRFMF/ksef-api/open-api.json).
+// Re-check that spec before adjusting anything here if KSeF ships a new API version.
 const ENVIRONMENT_BASE_URLS = {
   test: "https://api-test.ksef.mf.gov.pl/api/v2",
   demo: "https://api-demo.ksef.mf.gov.pl/api/v2",
@@ -63,16 +62,8 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function toPublicKey(pemOrCertificate) {
-  if (pemOrCertificate.includes("BEGIN CERTIFICATE")) {
-    return new X509Certificate(pemOrCertificate).publicKey;
-  }
-  return createPublicKey(pemOrCertificate);
-}
-
-function encryptKsefToken(ksefToken, timestampMs, publicKeyPem) {
+function encryptKsefToken(ksefToken, timestampMs, publicKey) {
   const payload = Buffer.from(`${ksefToken}|${timestampMs}`, "utf8");
-  const publicKey = toPublicKey(publicKeyPem);
   const encrypted = publicEncrypt(
     { key: publicKey, padding: cryptoConstants.RSA_PKCS1_OAEP_PADDING, oaepHash: "sha256" },
     payload,
@@ -80,20 +71,28 @@ function encryptKsefToken(ksefToken, timestampMs, publicKeyPem) {
   return encrypted.toString("base64");
 }
 
-async function fetchEncryptionPublicKey(baseUrl) {
-  const result = await requestJson(`${baseUrl}/security/public-key-encryption`, { method: "GET" }, "security.publicKey");
-  return expectField(result.publicKey ?? result.certificate, "publicKey", "security.publicKey");
+async function fetchTokenEncryptionCertificate(baseUrl) {
+  const result = await requestJson(
+    `${baseUrl}/security/public-key-certificates`,
+    { method: "GET" },
+    "security.publicKeyCertificates",
+  );
+  const match = result.find((cert) => cert.usage?.includes("KsefTokenEncryption"));
+  if (!match?.certificate || !match.publicKeyId) {
+    throw new KsefApiError(
+      "KSeF nie zwrócił certyfikatu do szyfrowania tokenu (usage=KsefTokenEncryption).",
+      "security.publicKeyCertificates",
+    );
+  }
+  const derCertificate = Buffer.from(match.certificate, "base64");
+  return { publicKey: new X509Certificate(derCertificate).publicKey, publicKeyId: match.publicKeyId };
 }
 
 async function requestChallenge(baseUrl) {
-  const result = await requestJson(
-    `${baseUrl}/auth/challenge`,
-    { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}) },
-    "auth.challenge",
-  );
+  const result = await requestJson(`${baseUrl}/auth/challenge`, { method: "POST" }, "auth.challenge");
   return {
     challenge: expectField(result.challenge, "challenge", "auth.challenge"),
-    timestamp: expectField(result.timestamp, "timestamp", "auth.challenge"),
+    timestampMs: expectField(result.timestampMs, "timestampMs", "auth.challenge"),
   };
 }
 
@@ -117,9 +116,9 @@ async function pollAuthenticationStatus(baseUrl, authenticationToken, referenceN
 
 export async function authenticateWithToken(environment, nip, ksefToken) {
   const baseUrl = getEnvironmentBaseUrl(environment);
-  const publicKeyPem = await fetchEncryptionPublicKey(baseUrl);
+  const { publicKey, publicKeyId } = await fetchTokenEncryptionCertificate(baseUrl);
   const challenge = await requestChallenge(baseUrl);
-  const encryptedToken = encryptKsefToken(ksefToken, challenge.timestamp, publicKeyPem);
+  const encryptedToken = encryptKsefToken(ksefToken, challenge.timestampMs, publicKey);
 
   const submitted = await requestJson(
     `${baseUrl}/auth/ksef-token`,
@@ -128,15 +127,16 @@ export async function authenticateWithToken(environment, nip, ksefToken) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         challenge: challenge.challenge,
-        contextIdentifier: { type: "onip", identifier: nip },
+        contextIdentifier: { type: "Nip", value: nip },
         encryptedToken,
+        publicKeyId,
       }),
     },
     "auth.ksefToken",
   );
 
-  const authenticationToken = expectField(submitted.authenticationToken, "authenticationToken", "auth.ksefToken");
   const referenceNumber = expectField(submitted.referenceNumber, "referenceNumber", "auth.ksefToken");
+  const authenticationToken = expectField(submitted.authenticationToken?.token, "authenticationToken.token", "auth.ksefToken");
 
   await pollAuthenticationStatus(baseUrl, authenticationToken, referenceNumber);
 
@@ -172,14 +172,13 @@ export async function refreshAccessToken(environment, refreshToken) {
 }
 
 function normalizeInvoiceMetadata(row) {
-  const ksefNumber = row.ksefNumber ?? row.ksefReferenceNumber;
+  const ksefNumber = row.ksefNumber;
   if (typeof ksefNumber !== "string" || !ksefNumber) return null;
-  const issueDate = row.issueDate ?? row.invoicingDate;
   return {
     ksefNumber,
-    issueDate: typeof issueDate === "string" ? issueDate : new Date().toISOString(),
-    sellerNip: typeof row.sellerNip === "string" ? row.sellerNip : null,
-    buyerNip: typeof row.buyerNip === "string" ? row.buyerNip : null,
+    issueDate: typeof row.issueDate === "string" ? row.issueDate : new Date().toISOString(),
+    sellerNip: typeof row.seller?.nip === "string" ? row.seller.nip : null,
+    buyerIdentifier: typeof row.buyer?.identifier === "string" ? row.buyer.identifier : null,
     grossAmount: typeof row.grossAmount === "number" ? row.grossAmount : null,
     currency: typeof row.currency === "string" ? row.currency : null,
   };
@@ -196,6 +195,7 @@ export async function queryInvoiceMetadata(environment, accessToken, options) {
       method: "POST",
       headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
       body: JSON.stringify({
+        subjectType: options.subjectType,
         dateRange: {
           dateType: "Issue",
           from: options.dateFrom.toISOString(),
@@ -206,9 +206,9 @@ export async function queryInvoiceMetadata(environment, accessToken, options) {
     "invoices.query",
   );
 
-  const rows = result.invoices ?? result.invoiceHeaderList ?? [];
+  const rows = result.invoices ?? [];
   const invoices = rows.map(normalizeInvoiceMetadata).filter((invoice) => invoice !== null);
-  return { invoices, hasMore: rows.length === pageSize };
+  return { invoices, hasMore: result.hasMore ?? false };
 }
 
 export async function fetchInvoice(environment, accessToken, ksefNumber) {
@@ -275,9 +275,9 @@ function findNip(node, subjectKey) {
 }
 
 // FA(2)/FA(3) field names (P_1, P_15, Podmiot1/Podmiot2, KodWaluty) are best-effort
-// based on the published Polish e-invoice schema. Fields that can't be located
-// resolve to null rather than throwing, so the worker can still store the raw
-// invoice and flag it for manual review instead of losing it.
+// based on the published Polish e-invoice schema, used only as a fallback when
+// the structured invoice-metadata response (issueDate/grossAmount/currency) is
+// incomplete. Fields that can't be located resolve to null rather than throwing.
 export function parseInvoiceSummary(xml) {
   let parsed;
   try {
