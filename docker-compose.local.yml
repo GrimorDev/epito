@@ -231,6 +231,7 @@ services:
       - ALL
     networks:
       - backend-internal
+      - ksef-egress
 
 volumes:
   postgres_data:
@@ -258,3 +259,5 @@ networks:
   backend-internal:
     name: ${EPITO_BACKEND_NETWORK:-epito-local-backend-internal}
     internal: true
+  ksef-egress:
+    name: ${EPITO_KSEF_EGRESS_NETWORK:-epito-local-ksef-egress}
