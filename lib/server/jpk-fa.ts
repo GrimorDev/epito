@@ -1,26 +1,18 @@
 import { XMLBuilder } from "fast-xml-parser";
-import {
-  deepFind,
-  deepFindAll,
-  findFirstNumber,
-  findFirstString,
-  findFirstIsoDate,
-  findNip,
-  lenientXmlParser,
-} from "./xml-utils";
+import { deepFindAll, findFirstNumber, findFirstString, findNip, lenientXmlParser } from "./xml-utils";
 
 // JPK_FA is the Ministry of Finance's standardized sales-invoice audit-file
 // export that every Polish accounting program (Comarch, Insert, Symfonia,
 // ...) can produce — used here as a no-API bridge for those systems, since
 // none of them expose a self-service integration API the way KSeF does.
 //
-// Unlike the KSeF FA(2)/FA(3) invoice schema (verified against a real
-// downloaded XSD from ksef.podatki.gov.pl), the exact JPK_FA envelope field
-// names below are best-effort: I could not locate a machine-readable JPK_FA
-// XSD to verify against, only its shared VAT-invoice data model. A missing
-// field resolves to null rather than throwing, so a wrong guess degrades
-// gracefully instead of breaking the import — check against a real exported
-// file and adjust the candidate key lists here if a field comes back empty.
+// Field names verified against a real JPK_FA(4) export (user-provided
+// sample): tags are all-lowercase (unlike KSeF's PascalCase FA schema, hence
+// the case-insensitive matching in xml-utils.ts). Buyer identity lives in
+// flat fields directly on <faktura> (P_3A name, P_5B NIP) — there is no
+// nested "Podmiot2" object the way KSeF's invoice schema has one. JPK_FA
+// carries no payment-due-date field at all (P_6 is the sale/completion date,
+// not a due date) — it's a VAT audit file, not a payment record.
 const xmlBuilder = new XMLBuilder({ ignoreAttributes: false, format: true });
 
 export type JpkFaInvoice = {
@@ -30,7 +22,6 @@ export type JpkFaInvoice = {
   currency: string;
   buyerNip: string | null;
   buyerName: string | null;
-  paymentDueDate: string | null;
   rawXml: string;
 };
 
@@ -58,22 +49,18 @@ export function parseJpkFaSalesInvoices(xml: string): JpkFaFile {
 
   // The filer's NIP is constant across the whole file (JPK_FA covers one
   // taxpayer's sales invoices) — try the file-level subject first, then fall
-  // back to whatever the first invoice's own seller block says.
-  const sellerNip = findNip(parsed, "Podmiot1") ?? findNip(invoiceNodes[0], "Podmiot1");
+  // back to the seller NIP repeated on the first invoice itself (P_4B).
+  const sellerNip = findNip(parsed, "Podmiot1") ?? findFirstString(invoiceNodes[0], ["P_4B"]);
 
-  const invoices: JpkFaInvoice[] = invoiceNodes.map((node) => {
-    const buyer = deepFind(node, "Podmiot2");
-    return {
-      invoiceNumber: findFirstString(node, ["P_2A", "P_2"]),
-      issuedAt: findFirstString(node, ["P_1"]),
-      grossAmount: findFirstNumber(node, ["P_15"]),
-      currency: findFirstString(node, ["KodWaluty"]) || "PLN",
-      buyerNip: findNip(node, "Podmiot2") ?? findFirstString(node, ["NrKontrahenta"]),
-      buyerName: findFirstString(buyer, ["Nazwa", "ImieNazwisko"]) ?? findFirstString(node, ["NazwaKontrahenta"]),
-      paymentDueDate: findFirstIsoDate(deepFind(node, "TerminPlatnosci")),
-      rawXml: serializeInvoiceXml(node),
-    };
-  });
+  const invoices: JpkFaInvoice[] = invoiceNodes.map((node) => ({
+    invoiceNumber: findFirstString(node, ["P_2A", "P_2"]),
+    issuedAt: findFirstString(node, ["P_1"]),
+    grossAmount: findFirstNumber(node, ["P_15"]),
+    currency: findFirstString(node, ["KodWaluty"]) || "PLN",
+    buyerNip: findFirstString(node, ["P_5B"]),
+    buyerName: findFirstString(node, ["P_3A"]),
+    rawXml: serializeInvoiceXml(node),
+  }));
 
   return { sellerNip, invoices };
 }

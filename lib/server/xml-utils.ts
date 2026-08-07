@@ -9,6 +9,14 @@ export const lenientXmlParser = new XMLParser({
   parseTagValue: false,
 });
 
+// Different Ministry of Finance schemas disagree on tag casing — KSeF's
+// FA(2)/FA(3) invoice schema uses PascalCase (P_1, Podmiot1), JPK_FA(4) uses
+// all-lowercase (p_1, podmiot1). Matching case-insensitively lets one set of
+// candidate key names work against either without duplicating lookups.
+function sameKey(a: string, b: string): boolean {
+  return a.toLowerCase() === b.toLowerCase();
+}
+
 export function deepFind(node: unknown, key: string): unknown {
   if (node === null || typeof node !== "object") return undefined;
   if (Array.isArray(node)) {
@@ -19,7 +27,9 @@ export function deepFind(node: unknown, key: string): unknown {
     return undefined;
   }
   const record = node as Record<string, unknown>;
-  if (key in record) return record[key];
+  for (const [entryKey, value] of Object.entries(record)) {
+    if (sameKey(entryKey, key)) return value;
+  }
   for (const value of Object.values(record)) {
     const found = deepFind(value, key);
     if (found !== undefined) return found;
@@ -36,7 +46,7 @@ export function deepFindAll(node: unknown, key: string): unknown[] {
       return;
     }
     for (const [entryKey, value] of Object.entries(current as Record<string, unknown>)) {
-      if (entryKey === key) {
+      if (sameKey(entryKey, key)) {
         if (Array.isArray(value)) results.push(...value);
         else results.push(value);
       } else {

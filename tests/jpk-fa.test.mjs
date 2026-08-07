@@ -2,58 +2,72 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { parseJpkFaSalesInvoices } from "../lib/server/jpk-fa.ts";
 
-const sampleXml = `<?xml version="1.0" encoding="UTF-8"?>
-<JPK>
-  <Naglowek>
-    <DataOd>2026-07-01</DataOd>
-    <DataDo>2026-07-31</DataDo>
-  </Naglowek>
-  <Podmiot1>
-    <NIP>6117973520</NIP>
-    <Nazwa>robotic sp. z o.o.</Nazwa>
-  </Podmiot1>
-  <Faktury>
-    <Faktura>
-      <P_1>2026-07-05</P_1>
-      <P_2A>FV/07/2026/1</P_2A>
-      <P_15>1230.50</P_15>
-      <KodWaluty>PLN</KodWaluty>
-      <Podmiot2>
-        <NIP>1234567890</NIP>
-        <Nazwa>Kontrahent A</Nazwa>
-      </Podmiot2>
-    </Faktura>
-    <Faktura>
-      <P_1>2026-07-18</P_1>
-      <P_2A>FV/07/2026/2</P_2A>
-      <P_15>987.65</P_15>
-      <KodWaluty>PLN</KodWaluty>
-      <Podmiot2>
-        <NIP>9876543210</NIP>
-        <Nazwa>Kontrahent B</Nazwa>
-      </Podmiot2>
-    </Faktura>
-  </Faktury>
-</JPK>`;
+// Trimmed from a real JPK_FA(4) export (dummy "Testowa"/"Testowy" data).
+// Real-world JPK_FA uses all-lowercase tags, unlike KSeF's PascalCase FA
+// schema — this is the exact case that broke the first implementation.
+const realJpkFaSample = `<?xml version="1.0" encoding="utf-8"?>
+<tns:jpk xmlns:tns="http://jpk.mf.gov.pl/wzor/2022/02/17/02171/">
+  <tns:naglowek>
+    <tns:dataod>2025-01-01</tns:dataod>
+    <tns:datado>2025-01-31</tns:datado>
+  </tns:naglowek>
+  <tns:podmiot1>
+    <tns:identyfikatorpodmiotu>
+      <tns:nip>5271048000</tns:nip>
+      <tns:pelnanazwa>TESTOWA FIRMA GLOWNA S. A.</tns:pelnanazwa>
+    </tns:identyfikatorpodmiotu>
+  </tns:podmiot1>
+  <tns:faktura>
+    <tns:kodwaluty>PLN</tns:kodwaluty>
+    <tns:p_1>2024-04-03</tns:p_1>
+    <tns:p_2a>16/FV/2024</tns:p_2a>
+    <tns:p_3a>Testowy klient 1</tns:p_3a>
+    <tns:p_3b>Rozkoszna 1, 09-150 Roguszyn</tns:p_3b>
+    <tns:p_4a>PL</tns:p_4a>
+    <tns:p_4b>5271048000</tns:p_4b>
+    <tns:p_5b>5671920807</tns:p_5b>
+    <tns:p_6>2025-01-31</tns:p_6>
+    <tns:p_15>90.00</tns:p_15>
+    <tns:rodzajfaktury>VAT</tns:rodzajfaktury>
+  </tns:faktura>
+  <tns:faktura>
+    <tns:kodwaluty>PLN</tns:kodwaluty>
+    <tns:p_1>2024-04-13</tns:p_1>
+    <tns:p_2a>18/FV/2024</tns:p_2a>
+    <tns:p_3a>Testowy klient 2</tns:p_3a>
+    <tns:p_4a>PL</tns:p_4a>
+    <tns:p_4b>5271048000</tns:p_4b>
+    <tns:p_6>2025-01-13</tns:p_6>
+    <tns:p_15>90.00</tns:p_15>
+    <tns:rodzajfaktury>VAT</tns:rodzajfaktury>
+  </tns:faktura>
+  <tns:fakturactrl>
+    <tns:liczbafaktur>2</tns:liczbafaktur>
+    <tns:wartoscfaktur>90.00</tns:wartoscfaktur>
+  </tns:fakturactrl>
+</tns:jpk>`;
 
-test("parseJpkFaSalesInvoices extracts the filer NIP and every invoice", () => {
-  const result = parseJpkFaSalesInvoices(sampleXml);
-  assert.equal(result.sellerNip, "6117973520");
+test("parseJpkFaSalesInvoices handles real all-lowercase JPK_FA(4) tags", () => {
+  const result = parseJpkFaSalesInvoices(realJpkFaSample);
+  assert.equal(result.sellerNip, "5271048000");
   assert.equal(result.invoices.length, 2);
 
   const [first, second] = result.invoices;
-  assert.equal(first.invoiceNumber, "FV/07/2026/1");
-  assert.equal(first.issuedAt, "2026-07-05");
-  assert.equal(first.grossAmount, 1230.5);
+  assert.equal(first.invoiceNumber, "16/FV/2024");
+  assert.equal(first.issuedAt, "2024-04-03");
+  assert.equal(first.grossAmount, 90);
   assert.equal(first.currency, "PLN");
-  assert.equal(first.buyerNip, "1234567890");
-  assert.equal(first.buyerName, "Kontrahent A");
-  assert.ok(first.rawXml.includes("FV/07/2026/1"));
+  assert.equal(first.buyerNip, "5671920807");
+  assert.equal(first.buyerName, "Testowy klient 1");
+  assert.ok(first.rawXml.includes("16/FV/2024"));
 
-  assert.equal(second.invoiceNumber, "FV/07/2026/2");
-  assert.equal(second.buyerNip, "9876543210");
+  // Second invoice has no p_5b (buyer NIP unknown) — must resolve to null,
+  // not silently fall back to the seller's own NIP or throw.
+  assert.equal(second.invoiceNumber, "18/FV/2024");
+  assert.equal(second.buyerNip, null);
+  assert.equal(second.buyerName, "Testowy klient 2");
 });
 
 test("parseJpkFaSalesInvoices throws a clear error when no invoices are found", () => {
-  assert.throws(() => parseJpkFaSalesInvoices("<JPK><Naglowek/></JPK>"), /Nie znaleziono/);
+  assert.throws(() => parseJpkFaSalesInvoices("<tns:jpk><tns:naglowek/></tns:jpk>"), /Nie znaleziono/);
 });
