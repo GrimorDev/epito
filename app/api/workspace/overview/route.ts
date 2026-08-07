@@ -12,7 +12,7 @@ export async function GET(request: NextRequest) {
   }
 
   const data = await withTenantTransaction(session.tenantId, session.userId, async (client) => {
-    const [tenantResult, companiesResult, teamResult, documentsResult, paymentsResult, statsResult] = await Promise.all([
+    const [tenantResult, companiesResult, teamResult, documentsResult, paymentsResult, statsResult, ksefConnectionsResult] = await Promise.all([
       client.query<{ id: string; slug: string; display_name: string; legal_name: string; nip: string | null; settings: Record<string, unknown> }>(
         "select id, slug, display_name, legal_name, nip, settings from tenants where id = $1",
         [session.tenantId],
@@ -94,6 +94,25 @@ export async function GET(request: NextRequest) {
           (select count(*)::int from payments where status in ('due', 'failed')) as payments_due_count,
           (select coalesce(sum(amount), 0)::text from payments where status in ('due', 'failed')) as payments_due_total
       `),
+      client.query<{
+        id: string;
+        client_company_id: string;
+        client_company_name: string;
+        environment: string;
+        nip: string;
+        status: string;
+        last_synced_at: string | null;
+        last_error: string | null;
+        created_at: string;
+      }>(`
+        select connection.id, connection.client_company_id, company.name as client_company_name,
+          connection.environment, connection.nip, connection.status, connection.last_synced_at,
+          connection.last_error, connection.created_at
+        from ksef_connections connection
+        join client_companies company on company.id = connection.client_company_id
+        where company.deleted_at is null
+        order by company.name
+      `),
     ]);
 
     return {
@@ -103,6 +122,7 @@ export async function GET(request: NextRequest) {
       documents: documentsResult.rows,
       payments: paymentsResult.rows,
       stats: statsResult.rows[0],
+      ksefConnections: ksefConnectionsResult.rows,
     };
   });
 

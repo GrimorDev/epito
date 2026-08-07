@@ -10,7 +10,9 @@ import {
   LayoutDashboard,
   LogOut,
   Moon,
+  Plug,
   Plus,
+  RefreshCw,
   Settings,
   Sun,
   Users,
@@ -34,9 +36,10 @@ type Overview = {
   documents: Array<{ id: string; name: string; category: string; status: string; document_year: number; document_month: number; amount: string | null; currency: string; company_name: string; created_at: string }>;
   payments: Array<{ id: string; tax_type: string; period_label: string; amount: string; currency: string; due_date: string; status: string; company_name: string; created_at: string }>;
   stats: { clients_count: number; documents_count: number; payments_due_count: number; payments_due_total: string };
+  ksefConnections: Array<{ id: string; client_company_id: string; client_company_name: string; environment: string; nip: string; status: string; last_synced_at: string | null; last_error: string | null; created_at: string }>;
 };
 
-type Tab = "overview" | "clients" | "team" | "documents" | "payments" | "settings";
+type Tab = "overview" | "clients" | "team" | "documents" | "payments" | "integrations" | "settings";
 
 const roleLabel: Record<string, string> = {
   owner: "Właściciel",
@@ -52,7 +55,20 @@ const tabLabel: Record<Tab, string> = {
   team: "Zespół",
   documents: "Dokumenty",
   payments: "Płatności",
+  integrations: "Integracje",
   settings: "Ustawienia organizacji",
+};
+
+const ksefEnvironmentLabel: Record<string, string> = {
+  test: "Testowe",
+  demo: "Demo",
+  production: "Produkcyjne",
+};
+
+const ksefStatusLabel: Record<string, string> = {
+  disconnected: "Niepodłączone",
+  connected: "Połączone",
+  error: "Błąd",
 };
 
 const paymentTypeLabel: Record<string, string> = {
@@ -83,6 +99,10 @@ export function OfficeWorkspacePage() {
   const [teamMessage, setTeamMessage] = useState("");
   const [paymentMessage, setPaymentMessage] = useState("");
   const [settingsMessage, setSettingsMessage] = useState("");
+  const [connectionPending, setConnectionPending] = useState(false);
+  const [connectionMessage, setConnectionMessage] = useState("");
+  const [syncingConnectionId, setSyncingConnectionId] = useState<string | null>(null);
+  const [syncMessage, setSyncMessage] = useState("");
 
   const loadOverview = useCallback(async () => {
     const response = await fetch("/api/workspace/overview", { cache: "no-store" });
@@ -173,9 +193,30 @@ export function OfficeWorkspacePage() {
     }
   }
 
+  async function triggerKsefSync(connectionId: string) {
+    setSyncingConnectionId(connectionId);
+    setSyncMessage("");
+    try {
+      const response = await fetch("/api/workspace/ksef/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ connectionId }),
+      });
+      const payload = (await response.json()) as { error?: string };
+      if (!response.ok) throw new Error(payload.error || "Nie udało się uruchomić synchronizacji.");
+      setSyncMessage("Synchronizacja została zlecona. Status pojawi się po jej zakończeniu.");
+      await loadOverview();
+    } catch (reason) {
+      setSyncMessage(reason instanceof Error ? reason.message : "Nie udało się uruchomić synchronizacji.");
+    } finally {
+      setSyncingConnectionId(null);
+    }
+  }
+
   const canCreateClients = session?.platformRole === "supervisor" || ["owner", "admin", "accountant"].includes(session?.membershipRole || "");
   const canManageTeam = session?.platformRole === "supervisor" || ["owner", "admin"].includes(session?.membershipRole || "");
   const canManageSettings = session?.platformRole === "supervisor" || ["owner", "admin"].includes(session?.membershipRole || "");
+  const canManageIntegrations = session?.platformRole === "supervisor" || ["owner", "admin"].includes(session?.membershipRole || "");
 
   const navigation: Array<{ id: Tab; label: string; icon: typeof LayoutDashboard }> = [
     { id: "overview", label: "Pulpit", icon: LayoutDashboard },
@@ -183,6 +224,7 @@ export function OfficeWorkspacePage() {
     { id: "team", label: "Zespół", icon: Users },
     { id: "documents", label: "Dokumenty", icon: FileText },
     { id: "payments", label: "Płatności", icon: WalletCards },
+    { id: "integrations", label: "Integracje", icon: Plug },
     { id: "settings", label: "Ustawienia", icon: Settings },
   ];
 
@@ -232,6 +274,7 @@ export function OfficeWorkspacePage() {
                 <button className={tab === "team" ? styles.tabActive : styles.tab} type="button" onClick={() => setTab("team")}>Zespół ({data.team.length})</button>
                 <button className={tab === "documents" ? styles.tabActive : styles.tab} type="button" onClick={() => setTab("documents")}>Dokumenty ({data.documents.length})</button>
                 <button className={tab === "payments" ? styles.tabActive : styles.tab} type="button" onClick={() => setTab("payments")}>Płatności ({data.payments.length})</button>
+                <button className={tab === "integrations" ? styles.tabActive : styles.tab} type="button" onClick={() => setTab("integrations")}>Integracje ({data.ksefConnections.length})</button>
                 <button className={tab === "settings" ? styles.tabActive : styles.tab} type="button" onClick={() => setTab("settings")}>Ustawienia</button>
               </div>
 
@@ -325,6 +368,37 @@ export function OfficeWorkspacePage() {
                 </div>
               ) : null}
 
+              {tab === "integrations" ? (
+                <div className={styles.twoColumns}>
+                  <section className={styles.panel}>
+                    <header className={styles.panelHeader}>
+                      <div><h2>Połączenia KSeF</h2><p>Faktury klientów pobierane z Krajowego Systemu e-Faktur trafiają do zakładki Dokumenty.</p></div>
+                      <button className={styles.buttonGhost} type="button" onClick={() => loadOverview()}><RefreshCw size={17} /> Odśwież</button>
+                    </header>
+                    <FormMessage message={syncMessage} />
+                    <ConnectionsTable
+                      connections={data.ksefConnections}
+                      onSync={triggerKsefSync}
+                      syncingConnectionId={syncingConnectionId}
+                    />
+                  </section>
+                  {canManageIntegrations ? (
+                    <section className={`${styles.panel} ${styles.formPanel}`}>
+                      <h2>Podłącz KSeF</h2><p>Token generuje się w Aplikacji Podatnika KSeF dla NIP-u firmy klienta.</p>
+                      <form className={styles.singleForm} onSubmit={(event) => submitForm(event, "/api/workspace/ksef/connections", setConnectionPending, setConnectionMessage, "Połączenie KSeF zostało zapisane.")}>
+                        <div className={styles.field}><label htmlFor="ksefClientCompanyId">Klient</label><select id="ksefClientCompanyId" name="clientCompanyId" required defaultValue=""><option value="" disabled>Wybierz firmę</option>{data.companies.map((company) => <option key={company.id} value={company.id}>{company.name}</option>)}</select></div>
+                        <div className={styles.field}><label htmlFor="ksefEnvironment">Środowisko</label><select id="ksefEnvironment" name="environment" defaultValue="test"><option value="test">Testowe</option><option value="demo">Demo</option><option value="production">Produkcyjne</option></select></div>
+                        <div className={styles.field}><label htmlFor="ksefNip">NIP</label><input id="ksefNip" name="nip" required inputMode="numeric" maxLength={10} /></div>
+                        <div className={styles.field}><label htmlFor="ksefToken">Token KSeF</label><input id="ksefToken" name="token" type="password" required minLength={10} maxLength={512} autoComplete="off" /></div>
+                        <FormMessage message={connectionMessage} />
+                        {!data.companies.length ? <div className={styles.error}>Najpierw dodaj klienta biura.</div> : null}
+                        <button className={styles.buttonPrimary} type="submit" disabled={connectionPending || !data.companies.length}>{connectionPending ? "Zapisuję…" : "Podłącz KSeF"}</button>
+                      </form>
+                    </section>
+                  ) : null}
+                </div>
+              ) : null}
+
               {tab === "settings" ? (
                 <div className={styles.twoColumns}>
                   <section className={`${styles.panel} ${styles.formPanel}`}>
@@ -362,6 +436,51 @@ function DocumentsTable({ documents }: { documents: Overview["documents"] }) {
 
 function PaymentsTable({ payments }: { payments: Overview["payments"] }) {
   return <div className={styles.tableWrap}><table className={styles.table}><thead><tr><th>Płatność</th><th>Klient</th><th>Okres</th><th>Termin</th><th>Kwota</th><th>Status</th></tr></thead><tbody>{payments.map((payment) => <tr key={payment.id}><td><strong>{paymentTypeLabel[payment.tax_type] || payment.tax_type}</strong></td><td>{payment.company_name}</td><td>{payment.period_label}</td><td>{new Date(`${payment.due_date}T00:00:00`).toLocaleDateString("pl-PL")}</td><td><strong>{formatMoney(payment.amount, payment.currency)}</strong></td><td><span className={styles.status}>{payment.status === "due" ? "Do zapłaty" : payment.status}</span></td></tr>)}</tbody></table></div>;
+}
+
+function ConnectionsTable({
+  connections,
+  onSync,
+  syncingConnectionId,
+}: {
+  connections: Overview["ksefConnections"];
+  onSync: (connectionId: string) => void;
+  syncingConnectionId: string | null;
+}) {
+  if (!connections.length) {
+    return <Empty title="Brak połączeń KSeF" text="Podłącz pierwszą firmę klienta, aby zacząć pobierać jej faktury z KSeF." />;
+  }
+  return (
+    <div className={styles.tableWrap}>
+      <table className={styles.table}>
+        <thead><tr><th>Klient</th><th>NIP</th><th>Środowisko</th><th>Status</th><th>Ostatnia synchronizacja</th><th></th></tr></thead>
+        <tbody>
+          {connections.map((connection) => (
+            <tr key={connection.id}>
+              <td><strong>{connection.client_company_name}</strong></td>
+              <td>{connection.nip}</td>
+              <td>{ksefEnvironmentLabel[connection.environment] || connection.environment}</td>
+              <td>
+                <span className={styles.status}>{ksefStatusLabel[connection.status] || connection.status}</span>
+                {connection.status === "error" && connection.last_error ? <small>{connection.last_error}</small> : null}
+              </td>
+              <td>{connection.last_synced_at ? new Date(connection.last_synced_at).toLocaleString("pl-PL") : "Nigdy"}</td>
+              <td>
+                <button
+                  className={styles.buttonGhost}
+                  type="button"
+                  disabled={syncingConnectionId === connection.id}
+                  onClick={() => onSync(connection.id)}
+                >
+                  {syncingConnectionId === connection.id ? "Zlecam…" : "Synchronizuj teraz"}
+                </button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
 }
 
 function PasswordForm() {

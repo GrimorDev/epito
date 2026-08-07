@@ -66,3 +66,12 @@ export async function getRedisConfig(): Promise<RedisConfig> {
     password: await readSecret("REDIS_PASSWORD_FILE"),
   };
 }
+
+export async function getKsefEncryptionKey(): Promise<Buffer> {
+  const encoded = await readSecret("KSEF_ENCRYPTION_KEY_FILE");
+  const key = Buffer.from(encoded, "base64");
+  if (key.length !== 32) {
+    throw new Error("KSEF_ENCRYPTION_KEY_FILE must decode to exactly 32 bytes (base64)");
+  }
+  return key;
+}
