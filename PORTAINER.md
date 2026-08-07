@@ -8,6 +8,7 @@ Stack uruchamia:
 - `postgres` — PostgreSQL 16 z trwałym wolumenem i RLS,
 - `redis` — Redis 7 z AOF dla sesji, rate limitingu i kolejek,
 - `document-worker` — odczyt tekstu PDF i lokalny OCR faktur wykonywany poza procesem aplikacji,
+- `ksef-worker` — synchronizacja faktur klientów z Krajowym Systemem e-Faktur (KSeF),
 - `migrate` — migracje oraz bezpieczne utworzenie konta supervisora.
 
 PostgreSQL i Redis nie publikują portów na hoście. Są dostępne tylko w izolowanej sieci `backend-internal`.
@@ -36,13 +37,14 @@ W sekcji `Environment variables` dodaj wszystkie poniższe pozycje:
 | `EPITO_POSTGRES_ADMIN_PASSWORD` | unikalne losowe hasło techniczne, minimum 32 znaki |
 | `EPITO_DB_PASSWORD` | inne unikalne losowe hasło techniczne, minimum 32 znaki |
 | `EPITO_REDIS_PASSWORD` | kolejne unikalne losowe hasło techniczne, minimum 32 znaki |
+| `EPITO_KSEF_ENCRYPTION_KEY` | 32 losowe bajty zakodowane w base64 (klucz AES-256-GCM do szyfrowania tokenów KSeF) — wygeneruj `node -e "console.log(require('node:crypto').randomBytes(32).toString('base64'))"` |
 | `EPITO_BASE_DOMAIN` | produkcyjna domena bazowa, na przykład `epito.pl` |
 | `EPITO_PORT` | port hosta, domyślnie `8063` |
 | `EPITO_UPLOADS_VOLUME` | opcjonalna nazwa trwałego wolumenu dokumentów, domyślnie `epito-uploads-data` |
 
-Trzy hasła techniczne muszą być różne. Wygeneruj je w menedżerze haseł. Nie umieszczaj ich w repozytorium ani w pliku `.env` przesyłanym do Git.
+Cztery hasła/klucze techniczne muszą być różne. Wygeneruj je w menedżerze haseł. Nie umieszczaj ich w repozytorium ani w pliku `.env` przesyłanym do Git.
 
-Compose pobiera cztery hasła z konfiguracji Portainera i udostępnia je kontenerom jako pliki w `/run/secrets`. Hasła nie trafiają do zmiennych środowiskowych uruchomionych usług i nie pojawiają się w `docker inspect` kontenerów. Pozostają jednak dostępne administratorom Portainera, dlatego dostęp do stacka powinien być ograniczony do administratorów.
+Compose pobiera pięć wartości z konfiguracji Portainera (cztery hasła i klucz szyfrowania KSeF) i udostępnia je kontenerom jako pliki w `/run/secrets`. Nie trafiają do zmiennych środowiskowych uruchomionych usług i nie pojawiają się w `docker inspect` kontenerów. Pozostają jednak dostępne administratorom Portainera, dlatego dostęp do stacka powinien być ograniczony do administratorów.
 
 Pozostałe ustawienia mają bezpieczne wartości domyślne:
 
@@ -50,6 +52,7 @@ Pozostałe ustawienia mają bezpieczne wartości domyślne:
 | --- | --- |
 | `EPITO_IMAGE` | `epito:server` |
 | `EPITO_WORKER_IMAGE` | `epito-document-worker:server` |
+| `EPITO_KSEF_WORKER_IMAGE` | `epito-ksef-worker:server` |
 | `EPITO_PULL_POLICY` | `build` |
 | `EPITO_DATABASE_NAME` | `epito_prod` |
 | `EPITO_NETWORK` | `epito` |
@@ -64,7 +67,7 @@ Kliknij `Deploy the stack`. Pierwszy build może potrwać kilka minut. Kolejnoś
 1. PostgreSQL inicjalizuje bazę z SCRAM-SHA-256 i checksumami stron.
 2. Migrator tworzy schemat, ograniczoną rolę `epito_app`, RLS i konto supervisora.
 3. Redis przechodzi healthcheck.
-4. Epito uruchamia aplikację, a `document-worker` zaczyna odbierać zadania analizy z Redisa.
+4. Epito uruchamia aplikację, a `document-worker` i `ksef-worker` zaczynają odbierać zadania z Redisa.
 
 Sprawdź:
 
@@ -103,7 +106,7 @@ W stacku opartym na repozytorium użyj `Pull and redeploy`. Portainer pobierze n
 
 ## Lokalny build poza Portainerem
 
-Lokalny plik `docker-compose.local.yml` nadal używa plików z katalogu `secrets/`. Ustaw `EPITO_SUPERVISOR_EMAIL`, utwórz cztery pliki zgodnie z `secrets/README.md` i uruchom:
+Lokalny plik `docker-compose.local.yml` nadal używa plików z katalogu `secrets/`. Ustaw `EPITO_SUPERVISOR_EMAIL`, utwórz pięć plików zgodnie z `secrets/README.md` i uruchom:
 
 ```bash
 docker compose -f docker-compose.local.yml up -d --build

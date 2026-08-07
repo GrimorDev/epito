@@ -34,6 +34,14 @@ x-document-worker-build: &document-worker-build
   image: ${EPITO_WORKER_IMAGE:-epito-document-worker:server}
   pull_policy: ${EPITO_PULL_POLICY:-build}
 
+x-ksef-worker-build: &ksef-worker-build
+  build:
+    context: .
+    dockerfile: Dockerfile
+    target: ksef_worker
+  image: ${EPITO_KSEF_WORKER_IMAGE:-epito-ksef-worker:server}
+  pull_policy: ${EPITO_PULL_POLICY:-build}
+
 services:
   postgres:
     image: postgres:16-alpine
@@ -137,11 +145,13 @@ services:
       - "${EPITO_BIND_ADDRESS:-0.0.0.0}:${EPITO_PORT:-8063}:3000"
     environment:
       <<: *epito-runtime
+      KSEF_ENCRYPTION_KEY_FILE: /run/secrets/ksef_encryption_key
     volumes:
       - uploads_data:/app/data/uploads
     secrets:
       - db_password
       - redis_password
+      - ksef_encryption_key
     depends_on:
       postgres:
         condition: service_healthy
@@ -195,6 +205,36 @@ services:
     networks:
       - backend-internal
 
+  ksef-worker:
+    <<: *ksef-worker-build
+    container_name: ${EPITO_KSEF_WORKER_CONTAINER_NAME:-epito-ksef-worker}
+    restart: unless-stopped
+    init: true
+    environment:
+      <<: *epito-runtime
+      KSEF_ENCRYPTION_KEY_FILE: /run/secrets/ksef_encryption_key
+    volumes:
+      - uploads_data:/app/data/uploads
+    secrets:
+      - db_password
+      - redis_password
+      - ksef_encryption_key
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      disable: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    networks:
+      - backend-internal
+
 volumes:
   postgres_data:
     name: ${EPITO_POSTGRES_VOLUME:-epito-postgres-data}
@@ -212,6 +252,8 @@ secrets:
     environment: EPITO_REDIS_PASSWORD
   supervisor_password:
     environment: EPITO_SUPERVISOR_PASSWORD
+  ksef_encryption_key:
+    environment: EPITO_KSEF_ENCRYPTION_KEY
 
 networks:
   frontend:

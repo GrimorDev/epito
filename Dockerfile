@@ -64,6 +64,25 @@ USER nextjs
 
 CMD ["node", "scripts/document-worker.mjs"]
 
+FROM base AS ksef_worker
+
+ENV NODE_ENV=production \
+    NEXT_TELEMETRY_DISABLED=1
+
+RUN groupadd --system --gid 1001 nodejs \
+    && useradd --system --uid 1001 --gid nodejs nextjs \
+    && mkdir -p /app/data/uploads \
+    && chown -R nextjs:nodejs /app/data
+
+COPY --from=dependencies /app/node_modules ./node_modules
+COPY --from=builder /app/package.json /app/package-lock.json ./
+COPY --from=builder /app/scripts ./scripts
+RUN npm prune --omit=dev && chown -R nextjs:nodejs /app
+
+USER nextjs
+
+CMD ["node", "scripts/ksef-worker.mjs"]
+
 # Keep the web application as the default result of `docker build .`.
 # Compose still selects both runtime targets explicitly.
 FROM runner AS final
