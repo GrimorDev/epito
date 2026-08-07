@@ -53,6 +53,7 @@ Pozostałe ustawienia mają bezpieczne wartości domyślne:
 | `EPITO_IMAGE` | `epito:server` |
 | `EPITO_WORKER_IMAGE` | `epito-document-worker:server` |
 | `EPITO_KSEF_WORKER_IMAGE` | `epito-ksef-worker:server` |
+| `EPITO_KSEF_POLL_INTERVAL_MS` | `600000` (10 minut) — jak często automatycznie synchronizowane jest każde połączenie KSeF w tle |
 | `EPITO_PULL_POLICY` | `build` |
 | `EPITO_DATABASE_NAME` | `epito_prod` |
 | `EPITO_NETWORK` | `epito` |
