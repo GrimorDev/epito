@@ -101,6 +101,8 @@ export function OfficeWorkspacePage() {
   const [settingsMessage, setSettingsMessage] = useState("");
   const [connectionPending, setConnectionPending] = useState(false);
   const [connectionMessage, setConnectionMessage] = useState("");
+  const [jpkFaPending, setJpkFaPending] = useState(false);
+  const [jpkFaMessage, setJpkFaMessage] = useState("");
   const [syncingConnectionId, setSyncingConnectionId] = useState<string | null>(null);
   const [syncMessage, setSyncMessage] = useState("");
 
@@ -190,6 +192,28 @@ export function OfficeWorkspacePage() {
       setSettingsMessage(reason instanceof Error ? reason.message : "Nie udało się zapisać ustawień.");
     } finally {
       setSettingsPending(false);
+    }
+  }
+
+  async function importJpkFa(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const formElement = event.currentTarget;
+    setJpkFaPending(true);
+    setJpkFaMessage("");
+    try {
+      const response = await fetch("/api/workspace/documents/jpk-fa", {
+        method: "POST",
+        body: new FormData(formElement),
+      });
+      const payload = (await response.json()) as { error?: string; imported?: number; skipped?: number };
+      if (!response.ok) throw new Error(payload.error || "Nie udało się zaimportować pliku JPK_FA.");
+      formElement.reset();
+      setJpkFaMessage(`Faktury zostały zaimportowane: ${payload.imported ?? 0}${payload.skipped ? ` (pominięto ${payload.skipped} już istniejących)` : ""}.`);
+      await loadOverview();
+    } catch (reason) {
+      setJpkFaMessage(reason instanceof Error ? reason.message : "Nie udało się zaimportować pliku JPK_FA.");
+    } finally {
+      setJpkFaPending(false);
     }
   }
 
@@ -338,10 +362,24 @@ export function OfficeWorkspacePage() {
               ) : null}
 
               {tab === "documents" ? (
-                <section className={styles.panel}>
-                  <header className={styles.panelHeader}><div><h2>Dokumenty klientów</h2><p>Lista dokumentów zapisanych dla bieżącej organizacji.</p></div></header>
-                  {data.documents.length ? <DocumentsTable documents={data.documents} /> : <Empty title="Brak dokumentów" text="Dokumenty pojawią się tutaj po imporcie lub synchronizacji z systemem księgowym." />}
-                </section>
+                <div className={styles.twoColumns}>
+                  <section className={styles.panel}>
+                    <header className={styles.panelHeader}><div><h2>Dokumenty klientów</h2><p>Lista dokumentów zapisanych dla bieżącej organizacji.</p></div></header>
+                    {data.documents.length ? <DocumentsTable documents={data.documents} /> : <Empty title="Brak dokumentów" text="Dokumenty pojawią się tutaj po imporcie lub synchronizacji z systemem księgowym." />}
+                  </section>
+                  {canCreateClients ? (
+                    <section className={`${styles.panel} ${styles.formPanel}`}>
+                      <h2>Zaimportuj JPK_FA</h2><p>Wgraj plik JPK_FA wyeksportowany z Comarch, Insert, Symfonii lub innego programu księgowego klienta — faktury sprzedażowe trafią do Dokumentów.</p>
+                      <form className={styles.singleForm} onSubmit={importJpkFa}>
+                        <div className={styles.field}><label htmlFor="jpkFaCompany">Klient</label><select id="jpkFaCompany" name="clientCompanyId" required defaultValue=""><option value="" disabled>Wybierz firmę</option>{data.companies.map((company) => <option key={company.id} value={company.id}>{company.name}</option>)}</select></div>
+                        <div className={styles.field}><label htmlFor="jpkFaFile">Plik JPK_FA (XML)</label><input id="jpkFaFile" name="file" type="file" accept=".xml,text/xml,application/xml" required /></div>
+                        <FormMessage message={jpkFaMessage} />
+                        {!data.companies.length ? <div className={styles.error}>Najpierw dodaj klienta biura.</div> : null}
+                        <button className={styles.buttonPrimary} type="submit" disabled={jpkFaPending || !data.companies.length}>{jpkFaPending ? "Importuję…" : "Zaimportuj"}</button>
+                      </form>
+                    </section>
+                  ) : null}
+                </div>
               ) : null}
 
               {tab === "payments" ? (
