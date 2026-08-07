@@ -162,8 +162,8 @@ async function handleKsefSync(job) {
     for (const invoice of newInvoices) {
       const alreadyStored = await withTenant(tenantId, actorUserId, async (client) => {
         const result = await client.query(
-          "select 1 from documents where tenant_id = $1 and client_company_id = $2 and ksef_number = $3 and deleted_at is null",
-          [tenantId, connectionRow.client_company_id, invoice.ksefNumber],
+          "select 1 from documents where tenant_id = $1 and client_company_id = $2 and ksef_number = $3 and category = $4 and deleted_at is null",
+          [tenantId, connectionRow.client_company_id, invoice.ksefNumber, invoice.category],
         );
         return result.rowCount > 0;
       });
