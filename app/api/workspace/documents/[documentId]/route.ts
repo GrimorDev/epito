@@ -18,6 +18,35 @@ function canEdit(role: string | null, platformRole: string) {
   return platformRole === "supervisor" || ["owner", "admin", "accountant", "employee"].includes(role || "");
 }
 
+// The CSP below ("sandbox; default-src 'none'") is intentionally strict for
+// documents rendered inline (untrusted uploads shown in an iframe), but it
+// also blocks the browser's own XML tree-view stylesheet, so raw XML degrades
+// to one line of concatenated text. Indenting it and serving as text/plain
+// makes it readable without loosening that CSP.
+function xmlLineDepthDelta(trimmed: string): -1 | 0 | 1 {
+  if (/^<\?/.test(trimmed) || /^<!--/.test(trimmed) || /\/>$/.test(trimmed)) return 0;
+  if (/^<([a-zA-Z_][\w:.-]*)(?:\s[^>]*)?>.*<\/\1>$/.test(trimmed)) return 0;
+  if (/^<\//.test(trimmed)) return -1;
+  if (/^</.test(trimmed)) return 1;
+  return 0;
+}
+
+function formatXmlForInlinePreview(xml: string): string {
+  const withBreaks = xml.replace(/>\s*</g, ">\n<").trim();
+  let depth = 0;
+  return withBreaks
+    .split("\n")
+    .map((line) => {
+      const trimmed = line.trim();
+      const delta = xmlLineDepthDelta(trimmed);
+      if (delta === -1) depth = Math.max(0, depth - 1);
+      const indented = "  ".repeat(depth) + trimmed;
+      if (delta === 1) depth += 1;
+      return indented;
+    })
+    .join("\n");
+}
+
 export async function GET(request: NextRequest, context: Context) {
   const session = await getSession(request);
   if (!session?.tenantId) return NextResponse.json({ error: "Zaloguj się ponownie." }, { status: 401 });
@@ -35,11 +64,16 @@ export async function GET(request: NextRequest, context: Context) {
   const absolutePath = path.resolve(root, document.storage_key);
   if (!absolutePath.startsWith(`${root}${path.sep}`)) return NextResponse.json({ error: "Nieprawidłowa ścieżka dokumentu." }, { status: 400 });
   try {
-    const contents = await readFile(/* turbopackIgnore: true */ absolutePath);
+    const rawContents = await readFile(/* turbopackIgnore: true */ absolutePath);
     const safeName = document.name.replace(/["\r\n]/g, "_");
     const disposition = request.nextUrl.searchParams.get("inline") === "1" ? "inline" : "attachment";
+    const isInlineXml = disposition === "inline" && document.mime_type.includes("xml");
+    const contents = isInlineXml
+      ? Buffer.from(formatXmlForInlinePreview(rawContents.toString("utf8")), "utf8")
+      : rawContents;
+    const contentType = isInlineXml ? "text/plain; charset=utf-8" : document.mime_type;
     return new NextResponse(contents, { headers: {
-      "Content-Type": document.mime_type,
+      "Content-Type": contentType,
       "Content-Length": String(contents.length),
       "Content-Disposition": `${disposition}; filename="${safeName}"; filename*=UTF-8''${encodeURIComponent(document.name)}`,
       "Cache-Control": "private, no-store",
