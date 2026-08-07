@@ -372,7 +372,7 @@ export function OfficeWorkspacePage() {
                 <div className={styles.twoColumns}>
                   <section className={styles.panel}>
                     <header className={styles.panelHeader}>
-                      <div><h2>Połączenia KSeF</h2><p>Faktury klientów pobierane z Krajowego Systemu e-Faktur trafiają do zakładki Dokumenty.</p></div>
+                      <div><h2>Połączenia KSeF</h2><p>Automatyczna synchronizacja w tle co ok. 10 minut. Gdy klient czeka na telefonie, użyj &bdquo;Synchronizuj teraz&rdquo; — działa od razu.</p></div>
                       <button className={styles.buttonGhost} type="button" onClick={() => loadOverview()}><RefreshCw size={17} /> Odśwież</button>
                     </header>
                     <FormMessage message={syncMessage} />

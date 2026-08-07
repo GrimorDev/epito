@@ -3,6 +3,7 @@ import { getSession, isSameOrigin } from "@/lib/server/auth";
 import { withTenantTransaction } from "@/lib/server/database";
 import { encryptSecret } from "@/lib/server/crypto-secrets";
 import type { KsefEnvironment } from "@/lib/server/ksef/client";
+import { scheduleKsefSync, unscheduleKsefSync } from "@/lib/server/queues";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -89,6 +90,11 @@ export async function POST(request: NextRequest) {
       );
       return result.rows[0].id;
     });
+    try {
+      await scheduleKsefSync(connectionId, session.tenantId, session.userId);
+    } catch (error) {
+      console.error("KSeF poll scheduling failed", error);
+    }
     return NextResponse.json({ ok: true, connectionId }, { status: 201 });
   } catch (error) {
     if (error instanceof Error && error.message === "CLIENT_NOT_FOUND") {
@@ -120,5 +126,10 @@ export async function DELETE(request: NextRequest) {
     return true;
   });
   if (!removed) return NextResponse.json({ error: "Nie znaleziono połączenia." }, { status: 404 });
+  try {
+    await unscheduleKsefSync(connectionId);
+  } catch (error) {
+    console.error("KSeF poll unscheduling failed", error);
+  }
   return NextResponse.json({ ok: true });
 }

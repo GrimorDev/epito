@@ -54,3 +54,33 @@ export async function enqueueBackgroundJob(
     jobId: options.jobId,
   });
 }
+
+const DEFAULT_KSEF_POLL_INTERVAL_MS = 10 * 60 * 1000;
+
+function ksefPollIntervalMs(): number {
+  const raw = Number(process.env.KSEF_POLL_INTERVAL_MS);
+  return Number.isFinite(raw) && raw >= 60_000 ? raw : DEFAULT_KSEF_POLL_INTERVAL_MS;
+}
+
+export async function scheduleKsefSync(connectionId: string, tenantId: string, actorUserId: string | null) {
+  const queue = await getBackgroundQueue("integrations");
+  await queue.upsertJobScheduler(
+    `ksef-poll-${connectionId}`,
+    { every: ksefPollIntervalMs() },
+    {
+      name: "ksef.sync",
+      data: {
+        tenantId,
+        actorUserId,
+        type: "ksef.sync",
+        payload: { connectionId },
+        createdAt: new Date().toISOString(),
+      } satisfies BackgroundJob,
+    },
+  );
+}
+
+export async function unscheduleKsefSync(connectionId: string) {
+  const queue = await getBackgroundQueue("integrations");
+  await queue.removeJobScheduler(`ksef-poll-${connectionId}`);
+}
