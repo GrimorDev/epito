@@ -405,6 +405,9 @@ async function handleInvoiceIssue(job) {
         session.encryption,
       );
       await closeOnlineSession(connectionRow.environment, auth.accessToken, session.referenceNumber);
+      console.log(
+        `Invoice ${invoiceRow.invoice_number} (${invoiceId}) sent to KSeF: session=${session.referenceNumber} invoiceRef=${sent.referenceNumber}`,
+      );
 
       await withTenant(tenantId, actorUserId, (client) =>
         client.query(
@@ -426,6 +429,9 @@ async function handleInvoiceIssue(job) {
       auth.accessToken,
       invoiceRow.ksef_session_reference,
       invoiceRow.ksef_invoice_reference,
+    );
+    console.log(
+      `Invoice ${invoiceRow.invoice_number} (${invoiceId}) KSeF status: code=${statusResult.code} description="${statusResult.description}"`,
     );
 
     if (statusResult.code === 100 || statusResult.code === 150) {

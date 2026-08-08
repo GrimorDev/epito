@@ -34,9 +34,14 @@ test("buildFa3InvoiceXml produces a schema-shaped FA(3) invoice with both VAT-ra
   const parsed = parser.parse(xml);
   const fa = parsed.Faktura.Fa;
 
+  assert.equal(parsed.Faktura["@_xmlns"], "http://crd.gov.pl/wzor/2025/06/25/13775/");
   assert.equal(parsed.Faktura.Naglowek.WariantFormularza, "3");
   assert.equal(parsed.Faktura.Podmiot1.DaneIdentyfikacyjne.NIP, "1234567890");
   assert.equal(parsed.Faktura.Podmiot2.DaneIdentyfikacyjne.NIP, "9876543210");
+  // Required markers on Podmiot2 itself (siblings of DaneIdentyfikacyjne),
+  // in schema order: JST then GV.
+  assert.equal(parsed.Faktura.Podmiot2.JST, "2");
+  assert.equal(parsed.Faktura.Podmiot2.GV, "2");
 
   assert.equal(fa.P_2, "FV/2026/08/001");
   assert.equal(fa.P_13_1, "1000.00");
@@ -57,7 +62,7 @@ test("buildFa3InvoiceXml produces a schema-shaped FA(3) invoice with both VAT-ra
   assert.equal(fa.Adnotacje.P_23, "2");
   assert.equal(fa.Adnotacje.PMarzy.P_PMarzyN, "1");
 
-  assert.equal(fa.Platnosc.TerminPlatnosci, "2026-08-22");
+  assert.equal(fa.Platnosc.TerminPlatnosci.Termin, "2026-08-22");
   assert.equal(fa.Platnosc.RachunekBankowy.NrRB, "61109010140000071219812874");
 
   const wiersze = Array.isArray(fa.FaWiersz) ? fa.FaWiersz : [fa.FaWiersz];
@@ -65,6 +70,13 @@ test("buildFa3InvoiceXml produces a schema-shaped FA(3) invoice with both VAT-ra
   assert.equal(wiersze[0].P_7, "Usługa księgowa");
   assert.equal(wiersze[0].P_12, "23");
   assert.equal(wiersze[1].P_12, "8");
+
+  // FaWiersz must come before Platnosc in the Fa sequence (confirmed against
+  // the real XSD with lxml) — a plain object-shape assertion can't catch
+  // element ordering, since parsing loses that information, so this checks
+  // the raw serialized text directly. Getting this backwards is exactly the
+  // bug that made KSeF reject every invoice with a due date or bank account.
+  assert.ok(xml.indexOf("<FaWiersz") < xml.indexOf("<Platnosc"), "FaWiersz must precede Platnosc in the emitted XML");
 });
 
 test("buyer without a NIP gets BrakID instead of an empty/invalid NIP element", () => {
