@@ -367,10 +367,18 @@ async function handleInvoiceIssue(job) {
     );
     return result.rows[0] || null;
   });
-  if (!connectionRow || connectionRow.status !== "connected") {
-    await markFailed("Brak aktywnego połączenia KSeF dla tej firmy klienta.");
+  if (!connectionRow) {
+    await markFailed("Brak skonfigurowanego połączenia KSeF dla tej firmy klienta.");
     return;
   }
+  // Deliberately not gated on connectionRow.status === "connected": that flag
+  // only flips to "connected" after the next successful periodic ksef.sync
+  // run (see app/api/workspace/ksef/connections/route.ts, which resets it to
+  // "disconnected" on every reconnect). authenticate() below performs a full
+  // fresh auth from token_ciphertext regardless of this cached status, and
+  // handleKsefSync itself never checks it either — requiring it here would
+  // just block sending for however long until the next sync tick happens to
+  // land, with no error visible anywhere to explain why.
 
   try {
     const auth = await authenticate(connectionRow);
