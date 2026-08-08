@@ -140,13 +140,10 @@ export function buildFa3InvoiceXml(input: IssuedInvoiceInput): string {
   };
   fa.RodzajFaktury = "VAT";
 
-  if (input.dueDate || input.bankAccountNumber) {
-    const platnosc: Record<string, unknown> = {};
-    if (input.dueDate) platnosc.TerminPlatnosci = input.dueDate;
-    if (input.bankAccountNumber) platnosc.RachunekBankowy = { NrRB: input.bankAccountNumber };
-    fa.Platnosc = platnosc;
-  }
-
+  // FaWiersz's position in the Fa sequence is right after RodzajFaktury (and
+  // the corrections-only block, which this MVP never emits) — well before
+  // Platnosc/Rozliczenie/etc. Confirmed by validating against the real XSD
+  // with lxml; earlier manual reading of the schema got this order wrong.
   fa.FaWiersz = input.lines.map((line, index) => {
     const net = lineNetAmount(line);
     return {
@@ -160,10 +157,26 @@ export function buildFa3InvoiceXml(input: IssuedInvoiceInput): string {
     };
   });
 
+  if (input.dueDate || input.bankAccountNumber) {
+    const platnosc: Record<string, unknown> = {};
+    // TerminPlatnosci is a complex element (an array of term entries, each
+    // with a nested <Termin> date) per the XSD, not a bare date value —
+    // <TerminPlatnosci>2026-08-22</TerminPlatnosci> fails schema validation.
+    if (input.dueDate) platnosc.TerminPlatnosci = { Termin: input.dueDate };
+    if (input.bankAccountNumber) platnosc.RachunekBankowy = { NrRB: input.bankAccountNumber };
+    fa.Platnosc = platnosc;
+  }
+
   const now = new Date().toISOString().replace(/\.\d+Z$/, "Z");
 
   const faktura = {
     Faktura: {
+      // targetNamespace + elementFormDefault="qualified" in
+      // schemat_FA(3)_v1-0E.xsd means an instance document with no namespace
+      // declared fails schema validation outright (every element becomes
+      // "no matching global declaration") — confirmed with a real xmllint
+      // run against the published XSD, not just read from the schema text.
+      "@_xmlns": "http://crd.gov.pl/wzor/2025/06/25/13775/",
       Naglowek: {
         KodFormularza: { "@_kodSystemowy": "FA (3)", "@_wersjaSchemy": "1-0E", "#text": "FA" },
         WariantFormularza: 3,
@@ -176,6 +189,11 @@ export function buildFa3InvoiceXml(input: IssuedInvoiceInput): string {
       Podmiot2: {
         DaneIdentyfikacyjne: { ...buildPodmiot2Identity(input.buyer), Nazwa: input.buyer.name },
         ...(input.buyer.address ? { Adres: buildAdres(input.buyer.address) } : {}),
+        // Required markers (siblings on Podmiot2, not part of
+        // DaneIdentyfikacyjne): "2" = doesn't concern a JST sub-unit / VAT
+        // group member (in that order — confirmed against the real XSD).
+        JST: "2",
+        GV: "2",
       },
       Fa: fa,
     },
