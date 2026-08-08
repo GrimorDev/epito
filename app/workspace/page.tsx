@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import styles from "../secure.module.css";
 import { ClientPortal } from "../panel/page";
+import { IssueInvoiceModal } from "../panel/workspace-sections";
 
 type Session = {
   fullName: string;
@@ -103,6 +104,8 @@ export function OfficeWorkspacePage() {
   const [connectionMessage, setConnectionMessage] = useState("");
   const [jpkFaPending, setJpkFaPending] = useState(false);
   const [jpkFaMessage, setJpkFaMessage] = useState("");
+  const [showIssueInvoiceModal, setShowIssueInvoiceModal] = useState(false);
+  const [issueInvoiceMessage, setIssueInvoiceMessage] = useState("");
   const [syncingConnectionId, setSyncingConnectionId] = useState<string | null>(null);
   const [syncMessage, setSyncMessage] = useState("");
 
@@ -364,7 +367,11 @@ export function OfficeWorkspacePage() {
               {tab === "documents" ? (
                 <div className={styles.twoColumns}>
                   <section className={styles.panel}>
-                    <header className={styles.panelHeader}><div><h2>Dokumenty klientów</h2><p>Lista dokumentów zapisanych dla bieżącej organizacji.</p></div></header>
+                    <header className={styles.panelHeader}>
+                      <div><h2>Dokumenty klientów</h2><p>Lista dokumentów zapisanych dla bieżącej organizacji.</p></div>
+                      {canCreateClients ? <button className={styles.buttonPrimary} type="button" onClick={() => setShowIssueInvoiceModal(true)}><FileText size={18} /> Wystaw fakturę</button> : null}
+                    </header>
+                    <FormMessage message={issueInvoiceMessage} />
                     {data.documents.length ? <DocumentsTable documents={data.documents} /> : <Empty title="Brak dokumentów" text="Dokumenty pojawią się tutaj po imporcie lub synchronizacji z systemem księgowym." />}
                   </section>
                   {canCreateClients ? (
@@ -459,6 +466,16 @@ export function OfficeWorkspacePage() {
           )}
         </main>
       </div>
+      {data && showIssueInvoiceModal ? (
+        <IssueInvoiceModal
+          companies={data.companies}
+          onClose={() => setShowIssueInvoiceModal(false)}
+          onIssued={async (message) => {
+            setIssueInvoiceMessage(message);
+            await loadOverview();
+          }}
+        />
+      ) : null}
     </div>
   );
 }

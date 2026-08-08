@@ -1,7 +1,7 @@
 import { randomUUID, createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { Worker } from "bullmq";
+import { Queue, Worker } from "bullmq";
 import Redis from "ioredis";
 import pg from "pg";
 import { decryptSecret, encryptSecret } from "./lib/crypto-secrets.mjs";
@@ -12,6 +12,11 @@ import {
   queryInvoiceMetadata,
   fetchInvoice,
   parseInvoiceSummary,
+  openOnlineSession,
+  sendOnlineSessionInvoice,
+  closeOnlineSession,
+  getSessionInvoiceStatus,
+  fetchSessionInvoiceUpo,
 } from "./lib/ksef-client.mjs";
 
 const { Pool } = pg;
@@ -49,6 +54,11 @@ const connection = new Redis({
   maxRetriesPerRequest: null,
   connectionName: "epito-ksef-worker",
 });
+// Used to re-enqueue "invoice.issue" jobs with a delay while polling KSeF for
+// asynchronous verification. The API route only creates the issued_invoices
+// row and enqueues the initial job — the actual KSeF network calls all
+// happen here, since this worker is the only process with KSeF egress.
+const invoiceQueue = new Queue("integrations", { connection, prefix: "epito" });
 
 async function withTenant(tenantId, userId, callback) {
   const client = await pool.connect();
@@ -313,9 +323,204 @@ async function handleKsefSync(job) {
   }
 }
 
+const INVOICE_POLL_DELAY_MS = 20_000;
+const INVOICE_SUBMIT_FOLLOWUP_DELAY_MS = 15_000;
+const INVOICE_MAX_POLL_ATTEMPTS = 40; // ~13 minutes at INVOICE_POLL_DELAY_MS
+
+async function handleInvoiceIssue(job) {
+  const invoiceId = String(job.data.payload?.invoiceId || "");
+  if (!invoiceId) throw new Error("Missing invoiceId");
+  const tenantId = job.data.tenantId;
+  const actorUserId = job.data.actorUserId || null;
+  const pollAttempts = Number(job.data.payload?.pollAttempts || 0);
+
+  const invoiceRow = await withTenant(tenantId, actorUserId, async (client) => {
+    const result = await client.query("select * from issued_invoices where id = $1", [invoiceId]);
+    return result.rows[0] || null;
+  });
+  if (!invoiceRow) {
+    console.warn(`Issued invoice ${invoiceId} not found, skipping job`);
+    return;
+  }
+  // "failed" is not terminal here — it only means a previous attempt threw
+  // (network blip, KSeF hiccup) and BullMQ is retrying; "accepted"/"rejected"
+  // are KSeF's own final answers and must never be reprocessed.
+  if (invoiceRow.status === "accepted" || invoiceRow.status === "rejected") return;
+
+  async function markFailed(message) {
+    await withTenant(tenantId, actorUserId, async (client) => {
+      await client.query(
+        "update issued_invoices set status = 'failed', error_message = $1, updated_at = now() where id = $2",
+        [message.slice(0, 500), invoiceId],
+      );
+      await client.query(
+        "insert into audit_log (tenant_id, actor_user_id, action, entity_type, entity_id, after_data) values ($1, $2, 'invoice.issue_failed', 'issued_invoice', $3, jsonb_build_object('error', $4::text))",
+        [tenantId, actorUserId, invoiceId, message.slice(0, 500)],
+      );
+    });
+  }
+
+  const connectionRow = await withTenant(tenantId, actorUserId, async (client) => {
+    const result = await client.query(
+      "select id, tenant_id, client_company_id, environment, nip, status, token_ciphertext, access_token_ciphertext, access_token_expires_at, refresh_token_ciphertext, refresh_token_expires_at from ksef_connections where tenant_id = $1 and client_company_id = $2",
+      [tenantId, invoiceRow.client_company_id],
+    );
+    return result.rows[0] || null;
+  });
+  if (!connectionRow || connectionRow.status !== "connected") {
+    await markFailed("Brak aktywnego połączenia KSeF dla tej firmy klienta.");
+    return;
+  }
+
+  try {
+    const auth = await authenticate(connectionRow);
+    await withTenant(tenantId, actorUserId, (client) =>
+      client.query(
+        `update ksef_connections set access_token_ciphertext = $1, access_token_expires_at = $2, refresh_token_ciphertext = $3, refresh_token_expires_at = $4, updated_at = now() where id = $5`,
+        [
+          encryptSecret(auth.accessToken, encryptionKey),
+          auth.accessTokenExpiresAt,
+          encryptSecret(auth.refreshToken, encryptionKey),
+          auth.refreshTokenExpiresAt,
+          connectionRow.id,
+        ],
+      ),
+    );
+
+    if (invoiceRow.status === "queued") {
+      const session = await openOnlineSession(connectionRow.environment, auth.accessToken);
+      const sent = await sendOnlineSessionInvoice(
+        connectionRow.environment,
+        auth.accessToken,
+        session.referenceNumber,
+        invoiceRow.invoice_xml,
+        session.encryption,
+      );
+      await closeOnlineSession(connectionRow.environment, auth.accessToken, session.referenceNumber);
+
+      await withTenant(tenantId, actorUserId, (client) =>
+        client.query(
+          `update issued_invoices set status = 'submitted', ksef_session_reference = $1, ksef_invoice_reference = $2, ksef_environment = $3, updated_at = now() where id = $4`,
+          [session.referenceNumber, sent.referenceNumber, connectionRow.environment, invoiceId],
+        ),
+      );
+      await invoiceQueue.add(
+        "invoice.issue",
+        { ...job.data, payload: { invoiceId, pollAttempts: 0 } },
+        { delay: INVOICE_SUBMIT_FOLLOWUP_DELAY_MS },
+      );
+      return;
+    }
+
+    // status === "submitted": poll KSeF's asynchronous verification result.
+    const statusResult = await getSessionInvoiceStatus(
+      connectionRow.environment,
+      auth.accessToken,
+      invoiceRow.ksef_session_reference,
+      invoiceRow.ksef_invoice_reference,
+    );
+
+    if (statusResult.code === 100 || statusResult.code === 150) {
+      if (pollAttempts >= INVOICE_MAX_POLL_ATTEMPTS) {
+        await markFailed("Przekroczono czas oczekiwania na potwierdzenie z KSeF.");
+        return;
+      }
+      await invoiceQueue.add(
+        "invoice.issue",
+        { ...job.data, payload: { invoiceId, pollAttempts: pollAttempts + 1 } },
+        { delay: INVOICE_POLL_DELAY_MS },
+      );
+      return;
+    }
+
+    if (statusResult.code === 200) {
+      let upoStorageKey = null;
+      if (statusResult.upoDownloadUrl) {
+        try {
+          const upoXml = await fetchSessionInvoiceUpo(statusResult.upoDownloadUrl);
+          const stored = await saveInvoiceFile(tenantId, upoXml, invoiceRow.issued_at);
+          upoStorageKey = stored.relativeKey;
+        } catch (error) {
+          console.warn(`Failed to fetch UPO for issued invoice ${invoiceId}`, error);
+        }
+      }
+
+      await withTenant(tenantId, actorUserId, async (client) => {
+        await client.query(
+          `update issued_invoices set status = 'accepted', ksef_number = $1, upo_storage_key = $2, updated_at = now() where id = $3`,
+          [statusResult.ksefNumber, upoStorageKey, invoiceId],
+        );
+        if (invoiceRow.document_id) {
+          await client.query(
+            "update documents set status = 'verified', ksef_number = $1, updated_at = now() where id = $2",
+            [statusResult.ksefNumber, invoiceRow.document_id],
+          );
+        }
+        await client.query(
+          `insert into payments (tenant_id, client_company_id, document_id, tax_type, period_label, amount, currency, due_date, status, metadata)
+           values ($1, $2, $3, 'invoice', $4, $5, $6, $7, 'due', $8::jsonb)`,
+          [
+            tenantId,
+            invoiceRow.client_company_id,
+            invoiceRow.document_id,
+            periodLabel(invoiceRow.issued_at),
+            invoiceRow.gross_total,
+            invoiceRow.currency,
+            invoiceRow.due_date || addDaysIso(invoiceRow.issued_at, 14),
+            JSON.stringify({
+              source: "issued_invoice",
+              ksef_number: statusResult.ksefNumber,
+              invoice_number: invoiceRow.invoice_number,
+            }),
+          ],
+        );
+        await client.query(
+          "insert into audit_log (tenant_id, actor_user_id, action, entity_type, entity_id, after_data) values ($1, $2, 'invoice.accepted', 'issued_invoice', $3, jsonb_build_object('ksef_number', $4::text))",
+          [tenantId, actorUserId, invoiceId, statusResult.ksefNumber],
+        );
+      });
+      return;
+    }
+
+    // Any other status code is a rejection (validation error, duplicate,
+    // permissions, etc.) — see faktury/weryfikacja-faktury.md for the full
+    // code table. Not auto-retried: KSeF gave a definitive answer.
+    await withTenant(tenantId, actorUserId, async (client) => {
+      const message = statusResult.description || `Błąd KSeF (${statusResult.code})`;
+      await client.query(
+        "update issued_invoices set status = 'rejected', error_message = $1, updated_at = now() where id = $2",
+        [message.slice(0, 500), invoiceId],
+      );
+      if (invoiceRow.document_id) {
+        await client.query("update documents set status = 'requires_action', updated_at = now() where id = $1", [
+          invoiceRow.document_id,
+        ]);
+      }
+      await client.query(
+        "insert into audit_log (tenant_id, actor_user_id, action, entity_type, entity_id, after_data) values ($1, $2, 'invoice.rejected', 'issued_invoice', $3, jsonb_build_object('code', $4::int, 'description', $5::text))",
+        [tenantId, actorUserId, invoiceId, statusResult.code, statusResult.description],
+      );
+    });
+  } catch (error) {
+    const message =
+      error instanceof KsefApiError ? error.message : error instanceof Error ? error.message : "Nieznany błąd wysyłki faktury";
+    // Marked failed on every attempt (mirroring handleKsefSync's convention)
+    // so the UI reflects transient errors immediately; a later successful
+    // retry overwrites this status. Note: if "send" itself succeeded on KSeF
+    // but a later step in this same attempt threw, a retry will resubmit —
+    // KSeF's own duplicate check (seller NIP + RodzajFaktury + P_2) rejects
+    // that as code 440 rather than silently double-issuing, but the rejection
+    // would then be misreported as a real failure. Accepted as a known MVP
+    // gap; reconciling it would need tracking send-acknowledged-but-unclosed
+    // state separately.
+    await markFailed(message);
+    throw error;
+  }
+}
+
 async function processJob(job) {
-  if (job.name !== "ksef.sync") return;
-  await handleKsefSync(job);
+  if (job.name === "ksef.sync") return handleKsefSync(job);
+  if (job.name === "invoice.issue") return handleInvoiceIssue(job);
 }
 
 const worker = new Worker("integrations", processJob, {
@@ -330,6 +535,7 @@ worker.on("failed", (job, error) => console.error(`Integration job ${job?.id || 
 
 async function shutdown() {
   await worker.close();
+  await invoiceQueue.close();
   await connection.quit();
   await pool.end();
 }
