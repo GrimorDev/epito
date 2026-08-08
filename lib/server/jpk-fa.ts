@@ -1,5 +1,5 @@
 import { XMLBuilder } from "fast-xml-parser";
-import { deepFindAll, findFirstNumber, findFirstString, findNip, lenientXmlParser } from "./xml-utils";
+import { deepFind, deepFindAll, findFirstNip, findFirstNumber, findFirstString, findNip, lenientXmlParser } from "./xml-utils";
 
 // JPK_FA is the Ministry of Finance's standardized sales-invoice audit-file
 // export that every Polish accounting program (Comarch, Insert, Symfonia,
@@ -35,10 +35,16 @@ export type JpkFaFile = {
   invoices: JpkFaInvoice[];
 };
 
-function serializeInvoiceXml(invoiceNode: unknown, lineNodes: unknown[]): string {
+function serializeInvoiceXml(invoiceNode: unknown, lineNodes: unknown[], podmiot1Node: unknown): string {
   const enriched = { ...(invoiceNode as Record<string, unknown>) };
   if (lineNodes.length) enriched.FakturaWiersz = lineNodes;
-  return xmlBuilder.build({ Faktura: enriched });
+  // Podmiot1 (seller identity) lives once at the JPK file root, not per
+  // invoice — carry it into each invoice's stored fragment so the "Podgląd"
+  // preview (parseInvoiceDetails, which only ever sees this one fragment,
+  // never the original file) can still recover the seller's NIP and name.
+  const root: Record<string, unknown> = { Faktura: enriched };
+  if (podmiot1Node) root.Podmiot1 = podmiot1Node;
+  return xmlBuilder.build(root);
 }
 
 export function parseJpkFaSalesInvoices(xml: string): JpkFaFile {
@@ -54,6 +60,7 @@ export function parseJpkFaSalesInvoices(xml: string): JpkFaFile {
     throw new Error("Nie znaleziono żadnych faktur (elementu \"Faktura\") w tym pliku. Sprawdź, czy to plik JPK_FA.");
   }
   const lineNodes = deepFindAll(parsed, "FakturaWiersz");
+  const podmiot1Node = deepFind(parsed, "Podmiot1");
 
   // The filer's NIP is constant across the whole file (JPK_FA covers one
   // taxpayer's sales invoices) — try the file-level subject first, then fall
@@ -70,9 +77,13 @@ export function parseJpkFaSalesInvoices(xml: string): JpkFaFile {
       issuedAt: findFirstString(node, ["P_1"]),
       grossAmount: findFirstNumber(node, ["P_15"]),
       currency: findFirstString(node, ["KodWaluty"]) || "PLN",
-      buyerNip: findFirstString(node, ["P_5B"]),
+      // P_5B is the field verified against a real export; P_3D is a fallback
+      // seen in some JPK_FA(4) generators that place buyer NIP there instead
+      // (validated as NIP-shaped so it can't grab an unrelated string, since
+      // other generators use P_3D for the seller's address instead).
+      buyerNip: findFirstString(node, ["P_5B"]) ?? findFirstNip(node, ["P_3D"]),
       buyerName: findFirstString(node, ["P_3A"]),
-      rawXml: serializeInvoiceXml(node, matchingLines),
+      rawXml: serializeInvoiceXml(node, matchingLines, podmiot1Node),
     };
   });
 

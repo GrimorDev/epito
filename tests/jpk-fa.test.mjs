@@ -104,7 +104,7 @@ test("line items (sibling FakturaWiersz records) are joined onto their invoice b
   // not just KSeF's nested Podmiot1/Podmiot2/FaWiersz structure.
   const details = parseInvoiceDetails(first.rawXml);
   assert.equal(details.seller.nip, "5271048000");
-  assert.equal(details.seller.name, null); // no P_3C in this trimmed sample
+  assert.equal(details.seller.name, "TESTOWA FIRMA GLOWNA S. A."); // recovered via the embedded Podmiot1 block
   assert.equal(details.buyer.nip, "5671920807");
   assert.equal(details.buyer.name, "Testowy klient 1");
   assert.equal(details.lines.length, 1);
@@ -114,4 +114,59 @@ test("line items (sibling FakturaWiersz records) are joined onto their invoice b
   const detailsSecond = parseInvoiceDetails(second.rawXml);
   assert.equal(detailsSecond.lines.length, 1);
   assert.equal(detailsSecond.lines[0].name, "Krzesło ogrodowe");
+});
+
+// A user-supplied sample file (PascalCase, flat <Podmiot1><NIP>/<PelnaNazwa>,
+// no P_5B at all — buyer NIP lives at P_3D instead) that surfaced two real
+// bugs: (1) Podmiot1 wasn't carried into each invoice's stored rawXml, so the
+// preview lost the seller's NIP/name entirely once re-parsed in isolation;
+// (2) buyer NIP has no P_5B fallback for generators that only populate P_3D.
+const flatPodmiot1Sample = `<?xml version="1.0" encoding="UTF-8"?>
+<JPK xmlns="http://jpk.mf.gov.pl/wzor/2022/02/17/02171/">
+  <Podmiot1>
+    <NIP>1541521658</NIP>
+    <PelnaNazwa>SoftTech Services Sp. z o.o.</PelnaNazwa>
+  </Podmiot1>
+  <Faktura typ="G">
+    <P_1>2026-08-03</P_1>
+    <P_2A>FV/2026/08/002</P_2A>
+    <P_3A>Kancelaria Podatkowa Wektor Sp. k.</P_3A>
+    <P_3B>al. Jerozolimskie 45, 00-692 Warszawa</P_3B>
+    <P_3C>PL</P_3C>
+    <P_3D>1234567890</P_3D>
+    <P_15>1845.00</P_15>
+  </Faktura>
+  <FakturaWiersz typ="G">
+    <P_2B>FV/2026/08/002</P_2B>
+    <P_7>Konsultacje architektoniczne Bazy Danych</P_7>
+    <P_8A>usł.</P_8A>
+    <P_8B>1</P_8B>
+    <P_9A>1500.00</P_9A>
+    <P_11>1500.00</P_11>
+    <P_12>23</P_12>
+  </FakturaWiersz>
+</JPK>`;
+
+test("flat Podmiot1 + P_3D-as-buyer-NIP sample: seller identity survives per-invoice serialization and buyer NIP falls back to P_3D", () => {
+  const result = parseJpkFaSalesInvoices(flatPodmiot1Sample);
+  assert.equal(result.sellerNip, "1541521658");
+  assert.equal(result.invoices.length, 1);
+
+  const [invoice] = result.invoices;
+  assert.equal(invoice.buyerNip, "1234567890");
+  assert.equal(invoice.buyerName, "Kancelaria Podatkowa Wektor Sp. k.");
+
+  const details = parseInvoiceDetails(invoice.rawXml);
+  assert.equal(details.seller.nip, "1541521658");
+  assert.equal(details.seller.name, "SoftTech Services Sp. z o.o.");
+  // P_3C ("PL", the buyer's country code in this file's convention) must
+  // never leak into the seller's name/address just because a different,
+  // unverified sample once used those tags for the seller instead.
+  assert.notEqual(details.seller.name, "PL");
+  assert.equal(details.seller.address, null);
+  assert.equal(details.buyer.nip, "1234567890");
+  assert.equal(details.buyer.name, "Kancelaria Podatkowa Wektor Sp. k.");
+  assert.equal(details.buyer.address, "al. Jerozolimskie 45, 00-692 Warszawa");
+  assert.equal(details.lines.length, 1);
+  assert.equal(details.lines[0].netAmount, 1500);
 });
