@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ChangeEvent, CSSProperties, useCallback, useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { DocumentImportModal, DocumentsWorkspace, SettingsWorkspace, TeamWorkspace, type WorkspaceDocument } from "./workspace-sections";
+import { DocumentImportModal, DocumentsWorkspace, IssueInvoiceModal, SettingsWorkspace, TeamWorkspace, type WorkspaceDocument } from "./workspace-sections";
 import {
   ArrowLeft,
   ArrowRight,
@@ -134,6 +134,7 @@ export function ClientPortal({ mode }: { mode: PortalMode }) {
   const [portalNotice, setPortalNotice] = useState("");
   const [modalPayment, setModalPayment] = useState<Payment | null>(null);
   const [showImportModal, setShowImportModal] = useState(false);
+  const [showIssueInvoiceModal, setShowIssueInvoiceModal] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState("blik");
   const [paying, setPaying] = useState(false);
   const [paymentSuccess, setPaymentSuccess] = useState(false);
@@ -411,11 +412,14 @@ export function ClientPortal({ mode }: { mode: PortalMode }) {
                 <>
                   <div className="page-heading">
                     <div><p>{production ? todayLabel : "Czwartek, 6 sierpnia"}</p><h1>Dzień dobry, {firstName}</h1><span>Najważniejsze informacje o Twojej firmie są tutaj.</span></div>
-                    {production ? (
-                      <button className="upload-button" type="button" onClick={() => setShowImportModal(true)}><Upload size={18} /> Dodaj dokument</button>
-                    ) : (
-                      <label className="upload-button"><Upload size={18} /> Dodaj dokument<input type="file" onChange={uploadDocument} /></label>
-                    )}
+                    <div className="page-heading-actions">
+                      {production ? (
+                        <button className="upload-button" type="button" onClick={() => setShowImportModal(true)}><Upload size={18} /> Dodaj dokument</button>
+                      ) : (
+                        <label className="upload-button"><Upload size={18} /> Dodaj dokument<input type="file" onChange={uploadDocument} /></label>
+                      )}
+                      {production ? <button className="button button-primary" type="button" onClick={() => setShowIssueInvoiceModal(true)}><FileText size={18} /> Wystaw fakturę</button> : null}
+                    </div>
                   </div>
 
                   <section className="payment-hero-card">
@@ -513,7 +517,7 @@ export function ClientPortal({ mode }: { mode: PortalMode }) {
                 </section>
               )}
 
-              {section === "Dokumenty" && <DocumentsWorkspace documents={documents} setDocuments={setDocuments} onUpload={uploadDocument} onOpenImport={() => setShowImportModal(true)} production={production} onChanged={loadProductionData} onNotice={setPortalNotice} />}
+              {section === "Dokumenty" && <DocumentsWorkspace documents={documents} setDocuments={setDocuments} onUpload={uploadDocument} onOpenImport={() => setShowImportModal(true)} onOpenIssueInvoice={() => setShowIssueInvoiceModal(true)} production={production} onChanged={loadProductionData} onNotice={setPortalNotice} />}
 
               {section === "Wiadomości" && production ? (
                 <section className="subpage messages-page"><div className="page-heading"><div><p>Kontakt z biurem</p><h1>Wiadomości</h1><span>Wszystkie ustalenia będą dostępne w jednym miejscu.</span></div></div><div className="panel-card portal-empty-state"><MessageSquareText size={34} /><h3>Brak wiadomości</h3><p>Moduł nie pokazuje treści demonstracyjnych na kontach produkcyjnych.</p></div></section>
@@ -576,6 +580,17 @@ export function ClientPortal({ mode }: { mode: PortalMode }) {
           companies={overview?.companies || []}
           onClose={() => setShowImportModal(false)}
           onImported={async (message) => {
+            setPortalNotice(message);
+            await loadProductionData();
+          }}
+        />
+      ) : null}
+
+      {showIssueInvoiceModal ? (
+        <IssueInvoiceModal
+          companies={overview?.companies || []}
+          onClose={() => setShowIssueInvoiceModal(false)}
+          onIssued={async (message) => {
             setPortalNotice(message);
             await loadProductionData();
           }}

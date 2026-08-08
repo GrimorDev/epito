@@ -65,6 +65,7 @@ type DocumentsProps = {
   setDocuments: Dispatch<SetStateAction<WorkspaceDocument[]>>;
   onUpload: (event: ChangeEvent<HTMLInputElement>) => void;
   onOpenImport?: () => void;
+  onOpenIssueInvoice?: () => void;
   production?: boolean;
   onChanged?: () => Promise<void> | void;
   onNotice?: (message: string) => void;
@@ -84,7 +85,7 @@ function DocumentViewer({ document, production, fullscreen = false }: { document
   return <iframe className={fullscreen ? "real-document-frame fullscreen" : "real-document-frame"} src={source} title={`Podgląd dokumentu ${document.name}`} />;
 }
 
-export function DocumentsWorkspace({ documents, setDocuments, onUpload, onOpenImport, production = false, onChanged, onNotice }: DocumentsProps) {
+export function DocumentsWorkspace({ documents, setDocuments, onUpload, onOpenImport, onOpenIssueInvoice, production = false, onChanged, onNotice }: DocumentsProps) {
   const [year, setYear] = useState(() => documents[0]?.year || new Date().getFullYear());
   const [month, setMonth] = useState(() => documents[0]?.month || months[new Date().getMonth()]);
   const [category, setCategory] = useState("Wszystkie");
@@ -199,11 +200,16 @@ export function DocumentsWorkspace({ documents, setDocuments, onUpload, onOpenIm
     <section className="subpage document-system-page">
       <div className="page-heading">
         <div><p>Centrum dokumentów</p><h1>Dokumenty</h1><span>Porządkuj, przeglądaj i edytuj pliki bez opuszczania panelu.</span></div>
-        {production && onOpenImport ? (
-          <button className="upload-button" type="button" onClick={onOpenImport}><Upload size={18} /> Dodaj dokument</button>
-        ) : (
-          <label className="upload-button"><Upload size={18} /> Dodaj dokument<input type="file" onChange={onUpload} /></label>
-        )}
+        <div className="page-heading-actions">
+          {production && onOpenImport ? (
+            <button className="upload-button" type="button" onClick={onOpenImport}><Upload size={18} /> Dodaj dokument</button>
+          ) : (
+            <label className="upload-button"><Upload size={18} /> Dodaj dokument<input type="file" onChange={onUpload} /></label>
+          )}
+          {production && onOpenIssueInvoice ? (
+            <button className="button button-primary" type="button" onClick={onOpenIssueInvoice}><FileText size={18} /> Wystaw fakturę</button>
+          ) : null}
+        </div>
       </div>
 
       <div className="document-periods">
@@ -370,6 +376,190 @@ export function DocumentImportModal({
           {!companies.length ? <p className="form-error">Najpierw dodaj klienta w zakładce Klienci.</p> : null}
           <button className="button button-primary button-wide" type="submit" disabled={pending || !companies.length}>
             {pending ? "Wysyłanie…" : mode === "jpk_fa" ? "Zaimportuj" : "Dodaj dokument"}
+          </button>
+        </motion.form>
+      </motion.div>
+    </AnimatePresence>
+  );
+}
+
+type InvoiceLineDraft = { name: string; unit: string; quantity: string; netUnitPrice: string; vatRate: "23" | "8" | "5" | "0" | "zw" };
+type Counterparty = { id: string; name: string; nip: string | null; address: string | null; email: string | null };
+
+const VAT_RATE_OPTIONS: Array<["23" | "8" | "5" | "0" | "zw", string]> = [
+  ["23", "23%"], ["8", "8%"], ["5", "5%"], ["0", "0%"], ["zw", "zw."],
+];
+
+function emptyInvoiceLine(): InvoiceLineDraft {
+  return { name: "", unit: "szt.", quantity: "1", netUnitPrice: "", vatRate: "23" };
+}
+
+export function IssueInvoiceModal({
+  companies,
+  onClose,
+  onIssued,
+}: {
+  companies: Array<{ id: string; name: string }>;
+  onClose: () => void;
+  onIssued: (message: string) => void;
+}) {
+  const [clientCompanyId, setClientCompanyId] = useState("");
+  const [counterparties, setCounterparties] = useState<Counterparty[]>([]);
+  const [counterpartyId, setCounterpartyId] = useState("");
+  const [addingCounterparty, setAddingCounterparty] = useState(false);
+  const [newCounterpartyName, setNewCounterpartyName] = useState("");
+  const [newCounterpartyNip, setNewCounterpartyNip] = useState("");
+  const [newCounterpartyAddress, setNewCounterpartyAddress] = useState("");
+  const [issuedAt, setIssuedAt] = useState(() => new Date().toISOString().slice(0, 10));
+  const [dueDate, setDueDate] = useState("");
+  const [companyAddress, setCompanyAddress] = useState("");
+  const [bankAccountNumber, setBankAccountNumber] = useState("");
+  const [lines, setLines] = useState<InvoiceLineDraft[]>([emptyInvoiceLine()]);
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (!clientCompanyId) return;
+    let cancelled = false;
+    fetch(`/api/workspace/counterparties?clientCompanyId=${encodeURIComponent(clientCompanyId)}`)
+      .then((response) => (response.ok ? response.json() : { counterparties: [] }))
+      .then((payload: { counterparties?: Counterparty[] }) => {
+        if (!cancelled) setCounterparties(payload.counterparties || []);
+      })
+      .catch(() => { if (!cancelled) setCounterparties([]); });
+    return () => { cancelled = true; };
+  }, [clientCompanyId]);
+
+  function handleClientCompanyChange(nextClientCompanyId: string) {
+    setClientCompanyId(nextClientCompanyId);
+    setCounterpartyId("");
+    setAddingCounterparty(false);
+    setCounterparties([]);
+  }
+
+  const grossTotal = lines.reduce((sum, line) => {
+    const net = (Number(line.quantity) || 0) * (Number(line.netUnitPrice) || 0);
+    const vat = line.vatRate === "0" || line.vatRate === "zw" ? 0 : net * (Number(line.vatRate) / 100);
+    return sum + net + vat;
+  }, 0);
+
+  function updateLine(index: number, patch: Partial<InvoiceLineDraft>) {
+    setLines((current) => current.map((line, i) => (i === index ? { ...line, ...patch } : line)));
+  }
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setPending(true);
+    setError("");
+    try {
+      const parsedLines = lines.map((line) => ({
+        name: line.name.trim(),
+        unit: line.unit.trim(),
+        quantity: Number(line.quantity),
+        netUnitPrice: Number(line.netUnitPrice),
+        vatRate: line.vatRate,
+      }));
+      if (parsedLines.some((line) => !line.name || !line.unit || !(line.quantity > 0) || !(line.netUnitPrice >= 0))) {
+        throw new Error("Uzupełnij poprawnie wszystkie pozycje faktury.");
+      }
+
+      const body: Record<string, unknown> = {
+        clientCompanyId,
+        issuedAt,
+        dueDate: dueDate || null,
+        companyAddress: companyAddress.trim() || undefined,
+        bankAccountNumber: bankAccountNumber.trim() || undefined,
+        lines: parsedLines,
+      };
+      if (addingCounterparty) {
+        body.counterparty = { name: newCounterpartyName.trim(), nip: newCounterpartyNip.trim(), address: newCounterpartyAddress.trim() };
+      } else {
+        body.counterpartyId = counterpartyId;
+      }
+
+      const response = await fetch("/api/workspace/invoices", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const payload = (await response.json()) as { error?: string; invoiceNumber?: string };
+      if (!response.ok) throw new Error(payload.error || "Nie udało się wystawić faktury.");
+      onIssued(`Faktura ${payload.invoiceNumber} została zapisana i wysłana do KSeF. Numer KSeF pojawi się po potwierdzeniu.`);
+      onClose();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Nie udało się wystawić faktury.");
+    } finally {
+      setPending(false);
+    }
+  }
+
+  const canSubmit = clientCompanyId && (addingCounterparty ? newCounterpartyName.trim() : counterpartyId) && lines.length > 0;
+
+  return (
+    <AnimatePresence>
+      <motion.div className="document-modal-backdrop" role="dialog" aria-modal="true" aria-label="Wystaw fakturę" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+        <motion.form className="document-editor-modal invoice-issue-modal" onSubmit={handleSubmit} initial={{ scale: 0.97, y: 16 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.97, y: 12 }}>
+          <button className="modal-close" type="button" onClick={onClose} aria-label="Zamknij"><X size={22} /></button>
+          <span className="modal-kicker">FAKTURY</span>
+          <h2>Wystaw fakturę</h2>
+          <p>Faktura zostanie wysłana do KSeF jako faktura sprzedaży VAT.</p>
+
+          <label>
+            Klient (sprzedawca)
+            <select value={clientCompanyId} onChange={(event) => handleClientCompanyChange(event.target.value)} required>
+              <option value="" disabled>Wybierz firmę</option>
+              {companies.map((company) => <option key={company.id} value={company.id}>{company.name}</option>)}
+            </select>
+          </label>
+
+          <label>Adres firmy klienta (tylko jeśli jeszcze nie uzupełniony w profilu)<input value={companyAddress} onChange={(event) => setCompanyAddress(event.target.value)} placeholder="ul. Przykładowa 1, 00-000 Warszawa" /></label>
+
+          {!addingCounterparty ? (
+            <label>
+              Nabywca
+              <select value={counterpartyId} onChange={(event) => setCounterpartyId(event.target.value)} disabled={!clientCompanyId}>
+                <option value="" disabled>Wybierz kontrahenta</option>
+                {counterparties.map((party) => <option key={party.id} value={party.id}>{party.name}{party.nip ? ` (NIP ${party.nip})` : ""}</option>)}
+              </select>
+              <button type="button" className="link-button" onClick={() => setAddingCounterparty(true)}>+ Dodaj nowego kontrahenta</button>
+            </label>
+          ) : (
+            <div className="invoice-new-counterparty">
+              <label>Nazwa nabywcy<input value={newCounterpartyName} onChange={(event) => setNewCounterpartyName(event.target.value)} required /></label>
+              <label>NIP (opcjonalnie)<input value={newCounterpartyNip} onChange={(event) => setNewCounterpartyNip(event.target.value)} placeholder="10 cyfr" /></label>
+              <label>Adres<input value={newCounterpartyAddress} onChange={(event) => setNewCounterpartyAddress(event.target.value)} /></label>
+              <button type="button" className="link-button" onClick={() => setAddingCounterparty(false)}>Wybierz z listy zamiast tego</button>
+            </div>
+          )}
+
+          <div className="document-editor-grid">
+            <label>Data wystawienia<input type="date" value={issuedAt} onChange={(event) => setIssuedAt(event.target.value)} required /></label>
+            <label>Termin płatności<input type="date" value={dueDate} onChange={(event) => setDueDate(event.target.value)} /></label>
+            <label>Numer konta do zapłaty<input value={bankAccountNumber} onChange={(event) => setBankAccountNumber(event.target.value)} placeholder="26 cyfr" /></label>
+          </div>
+
+          <div className="invoice-lines">
+            <span className="modal-kicker">POZYCJE</span>
+            {lines.map((line, index) => (
+              <div className="invoice-line-row" key={index}>
+                <input placeholder="Nazwa usługi/towaru" value={line.name} onChange={(event) => updateLine(index, { name: event.target.value })} required />
+                <input placeholder="Ilość" inputMode="decimal" value={line.quantity} onChange={(event) => updateLine(index, { quantity: event.target.value })} required />
+                <input placeholder="J.m." value={line.unit} onChange={(event) => updateLine(index, { unit: event.target.value })} required />
+                <input placeholder="Cena netto" inputMode="decimal" value={line.netUnitPrice} onChange={(event) => updateLine(index, { netUnitPrice: event.target.value })} required />
+                <select value={line.vatRate} onChange={(event) => updateLine(index, { vatRate: event.target.value as InvoiceLineDraft["vatRate"] })}>
+                  {VAT_RATE_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                </select>
+                <button type="button" className="icon-only" onClick={() => setLines((current) => current.filter((_, i) => i !== index))} disabled={lines.length === 1} aria-label="Usuń pozycję"><X size={16} /></button>
+              </div>
+            ))}
+            <button type="button" className="link-button" onClick={() => setLines((current) => [...current, emptyInvoiceLine()])}>+ Dodaj pozycję</button>
+          </div>
+
+          <div className="invoice-total-preview">Do zapłaty (brutto): <strong>{grossTotal.toLocaleString("pl-PL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} PLN</strong></div>
+
+          {error ? <p className="form-error">{error}</p> : null}
+          <button className="button button-primary button-wide" type="submit" disabled={pending || !canSubmit}>
+            {pending ? "Wystawianie…" : "Wystaw i wyślij do KSeF"}
           </button>
         </motion.form>
       </motion.div>

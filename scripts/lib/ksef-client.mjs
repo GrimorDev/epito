@@ -1,4 +1,4 @@
-import { X509Certificate, constants as cryptoConstants, publicEncrypt } from "node:crypto";
+import { X509Certificate, constants as cryptoConstants, createCipheriv, createHash, publicEncrypt, randomBytes } from "node:crypto";
 import { XMLParser } from "fast-xml-parser";
 
 // Mirrors lib/server/ksef/client.ts (kept as plain JS so the worker can run
@@ -71,16 +71,19 @@ function encryptKsefToken(ksefToken, timestampMs, publicKey) {
   return encrypted.toString("base64");
 }
 
-async function fetchTokenEncryptionCertificate(baseUrl) {
+// KSeF publishes separate certificates per usage: "KsefTokenEncryption" for
+// the login-token exchange, "SymmetricKeyEncryption" for the AES session key
+// used to encrypt invoice XML — using the wrong one is rejected outright.
+async function fetchPublicKeyCertificate(baseUrl, usage) {
   const result = await requestJson(
     `${baseUrl}/security/public-key-certificates`,
     { method: "GET" },
     "security.publicKeyCertificates",
   );
-  const match = result.find((cert) => cert.usage?.includes("KsefTokenEncryption"));
+  const match = result.find((cert) => cert.usage?.includes(usage));
   if (!match?.certificate || !match.publicKeyId) {
     throw new KsefApiError(
-      "KSeF nie zwrócił certyfikatu do szyfrowania tokenu (usage=KsefTokenEncryption).",
+      `KSeF nie zwrócił certyfikatu do szyfrowania (usage=${usage}).`,
       "security.publicKeyCertificates",
     );
   }
@@ -116,7 +119,7 @@ async function pollAuthenticationStatus(baseUrl, authenticationToken, referenceN
 
 export async function authenticateWithToken(environment, nip, ksefToken) {
   const baseUrl = getEnvironmentBaseUrl(environment);
-  const { publicKey, publicKeyId } = await fetchTokenEncryptionCertificate(baseUrl);
+  const { publicKey, publicKeyId } = await fetchPublicKeyCertificate(baseUrl, "KsefTokenEncryption");
   const challenge = await requestChallenge(baseUrl);
   const encryptedToken = encryptKsefToken(ksefToken, challenge.timestampMs, publicKey);
 
@@ -224,6 +227,112 @@ export async function fetchInvoice(environment, accessToken, ksefNumber) {
   }
   if (!response.ok) {
     throw new KsefApiError(`Nie udało się pobrać faktury ${ksefNumber} z KSeF: HTTP ${response.status}`, "invoices.fetch", response.status);
+  }
+  return response.text();
+}
+
+// --- Interactive session (invoice issuing) ---
+// Verified against github.com/CIRFMF/ksef-docs: sesja-interaktywna.md and
+// faktury/sesje/sesja-sprawdzenie-stanu-i-pobranie-upo.md. Re-check those
+// docs before changing anything here if KSeF ships a new API version.
+
+export async function openOnlineSession(environment, accessToken) {
+  const baseUrl = getEnvironmentBaseUrl(environment);
+  const { publicKey, publicKeyId } = await fetchPublicKeyCertificate(baseUrl, "SymmetricKeyEncryption");
+
+  // A fresh AES-256 key + 128-bit IV per session, as recommended by KSeF docs.
+  const key = randomBytes(32);
+  const iv = randomBytes(16);
+  const encryptedSymmetricKey = publicEncrypt(
+    { key: publicKey, padding: cryptoConstants.RSA_PKCS1_OAEP_PADDING, oaepHash: "sha256" },
+    key,
+  );
+
+  const result = await requestJson(
+    `${baseUrl}/sessions/online`,
+    {
+      method: "POST",
+      headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        formCode: { systemCode: "FA (3)", schemaVersion: "1-0E", value: "FA" },
+        encryption: {
+          encryptedSymmetricKey: encryptedSymmetricKey.toString("base64"),
+          initializationVector: iv.toString("base64"),
+          publicKeyId,
+        },
+      }),
+    },
+    "sessions.online.open",
+  );
+
+  return {
+    referenceNumber: expectField(result.referenceNumber, "referenceNumber", "sessions.online.open"),
+    validUntil: expectField(result.validUntil, "validUntil", "sessions.online.open"),
+    encryption: { key, iv },
+  };
+}
+
+export async function sendOnlineSessionInvoice(environment, accessToken, sessionReferenceNumber, invoiceXml, encryption) {
+  const baseUrl = getEnvironmentBaseUrl(environment);
+  const invoiceBuffer = Buffer.from(invoiceXml, "utf8");
+  const cipher = createCipheriv("aes-256-cbc", encryption.key, encryption.iv);
+  const encryptedInvoice = Buffer.concat([cipher.update(invoiceBuffer), cipher.final()]);
+
+  const result = await requestJson(
+    `${baseUrl}/sessions/online/${encodeURIComponent(sessionReferenceNumber)}/invoices`,
+    {
+      method: "POST",
+      headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        invoiceHash: createHash("sha256").update(invoiceBuffer).digest("base64"),
+        invoiceSize: invoiceBuffer.length,
+        encryptedInvoiceHash: createHash("sha256").update(encryptedInvoice).digest("base64"),
+        encryptedInvoiceSize: encryptedInvoice.length,
+        encryptedInvoiceContent: encryptedInvoice.toString("base64"),
+      }),
+    },
+    "sessions.online.sendInvoice",
+  );
+
+  return { referenceNumber: expectField(result.referenceNumber, "referenceNumber", "sessions.online.sendInvoice") };
+}
+
+export async function closeOnlineSession(environment, accessToken, sessionReferenceNumber) {
+  const baseUrl = getEnvironmentBaseUrl(environment);
+  await requestJson(
+    `${baseUrl}/sessions/online/${encodeURIComponent(sessionReferenceNumber)}/close`,
+    { method: "POST", headers: { Authorization: `Bearer ${accessToken}` } },
+    "sessions.online.close",
+  );
+}
+
+export async function getSessionInvoiceStatus(environment, accessToken, sessionReferenceNumber, invoiceReferenceNumber) {
+  const baseUrl = getEnvironmentBaseUrl(environment);
+  const result = await requestJson(
+    `${baseUrl}/sessions/${encodeURIComponent(sessionReferenceNumber)}/invoices/${encodeURIComponent(invoiceReferenceNumber)}`,
+    { method: "GET", headers: { Authorization: `Bearer ${accessToken}` } },
+    "sessions.invoiceStatus",
+  );
+
+  return {
+    code: expectField(result.status?.code, "status.code", "sessions.invoiceStatus"),
+    description: result.status?.description ?? "",
+    ksefNumber: result.ksefNumber ?? null,
+    upoDownloadUrl: result.upoDownloadUrl ?? null,
+  };
+}
+
+// upoDownloadUrl is a presigned link straight to KSeF's storage — per docs it
+// must be fetched WITHOUT an Authorization header, unlike every other call.
+export async function fetchSessionInvoiceUpo(upoDownloadUrl) {
+  let response;
+  try {
+    response = await fetch(upoDownloadUrl, { method: "GET" });
+  } catch (error) {
+    throw new KsefApiError("Nie udało się połączyć z KSeF podczas pobierania UPO.", "sessions.upo", undefined, error);
+  }
+  if (!response.ok) {
+    throw new KsefApiError(`Nie udało się pobrać UPO z KSeF: HTTP ${response.status}`, "sessions.upo", response.status);
   }
   return response.text();
 }

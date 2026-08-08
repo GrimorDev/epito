@@ -13,6 +13,7 @@ export type BackgroundJob = {
     | "pdf.generate"
     | "document.analyze"
     | "ksef.sync"
+    | "invoice.issue"
     | "payment.reconcile";
   payload: Record<string, unknown>;
   createdAt: string;
@@ -83,4 +84,14 @@ export async function scheduleKsefSync(connectionId: string, tenantId: string, a
 export async function unscheduleKsefSync(connectionId: string) {
   const queue = await getBackgroundQueue("integrations");
   await queue.removeJobScheduler(`ksef-poll-${connectionId}`);
+}
+
+export async function enqueueInvoiceIssue(invoiceId: string, tenantId: string, actorUserId: string | null) {
+  await enqueueBackgroundJob("integrations", {
+    tenantId,
+    actorUserId,
+    type: "invoice.issue",
+    payload: { invoiceId },
+    createdAt: new Date().toISOString(),
+  });
 }
