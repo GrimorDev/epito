@@ -4,6 +4,7 @@ import {
   deepFindAll,
   findAddress,
   findFirstIsoDate,
+  findFirstNip,
   findFirstNumber,
   findFirstString,
   findNip,
@@ -376,18 +377,27 @@ export function parseInvoiceDetails(xml: string): InvoiceDetails {
     invoiceNumber: findFirstString(parsed, ["P_2A", "P_2"]),
     issuedAt: findFirstString(parsed, ["P_1"]),
     currency: findFirstString(parsed, ["KodWaluty"]),
-    // Podmiot1/Podmiot2 are KSeF's nested seller/buyer blocks; JPK_FA has no
-    // such nesting and instead carries seller/buyer as flat P_3x/P_4x/P_5x
-    // fields directly on the invoice (see lib/server/jpk-fa.ts) — fall back
-    // to those when the nested lookup finds nothing.
+    // Podmiot1/Podmiot2 are KSeF's nested seller/buyer blocks. A JPK_FA import
+    // (lib/server/jpk-fa.ts) carries seller identity as a Podmiot1 block too
+    // (copied from the JPK file root onto each stored invoice fragment) but
+    // names it PelnaNazwa instead of Nazwa; buyer identity has no nested
+    // block at all and instead lives in flat P_3x/P_5x fields on the invoice
+    // — fall back to those when the nested lookup finds nothing. P_3C/P_3D
+    // are NOT used as a seller fallback here: different JPK_FA(4) generators
+    // disagree on what they hold (seen as buyer country/NIP in the wild),
+    // so guessing would misattribute buyer data as the seller's.
     seller: {
       nip: findNip(parsed, "Podmiot1") ?? findFirstString(parsed, ["P_4B"]),
-      name: findFirstString(seller, ["Nazwa", "ImieNazwisko"]) ?? findFirstString(parsed, ["P_3C"]),
-      address: findAddress(seller) ?? findFirstString(parsed, ["P_3D"]),
+      name: findFirstString(seller, ["Nazwa", "PelnaNazwa", "ImieNazwisko"]),
+      address: findAddress(seller),
     },
     buyer: {
-      nip: findNip(parsed, "Podmiot2") ?? findFirstString(parsed, ["P_5B"]),
-      name: findFirstString(buyer, ["Nazwa", "ImieNazwisko"]) ?? findFirstString(parsed, ["P_3A"]),
+      // P_5B is the field verified against a real export; P_3D is a fallback
+      // seen in some JPK_FA(4) generators that place buyer NIP there instead
+      // (validated as NIP-shaped so it can't grab an unrelated string, since
+      // other generators use P_3D for the seller's address instead).
+      nip: findNip(parsed, "Podmiot2") ?? findFirstString(parsed, ["P_5B"]) ?? findFirstNip(parsed, ["P_3D"]),
+      name: findFirstString(buyer, ["Nazwa", "PelnaNazwa", "ImieNazwisko"]) ?? findFirstString(parsed, ["P_3A"]),
       address: findAddress(buyer) ?? findFirstString(parsed, ["P_3B"]),
     },
     lines: allLineNodes.map((line) => ({

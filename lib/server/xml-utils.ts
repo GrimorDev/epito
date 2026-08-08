@@ -82,6 +82,20 @@ export function findNip(node: unknown, subjectKey: string): string | null {
   return typeof nip === "string" ? nip.trim() : null;
 }
 
+// A Polish NIP is exactly 10 digits. Some JPK_FA(4) generators repurpose a
+// field (e.g. P_3D) that another generator uses for something else entirely
+// (e.g. a seller address) — this guards a "try this field as a NIP" fallback
+// from swallowing an unrelated string just because the tag name lines up.
+export function findFirstNip(node: unknown, keys: string[]): string | null {
+  for (const key of keys) {
+    const value = deepFind(node, key);
+    if (typeof value !== "string") continue;
+    const digits = value.replace(/[\s-]/g, "");
+    if (/^\d{10}$/.test(digits)) return digits;
+  }
+  return null;
+}
+
 export function findAddress(node: unknown): string | null {
   const lines = [findFirstString(node, ["AdresL1"]), findFirstString(node, ["AdresL2"])].filter(
     (line): line is string => Boolean(line),
