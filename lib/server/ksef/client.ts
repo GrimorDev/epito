@@ -365,23 +365,32 @@ export function parseInvoiceDetails(xml: string): InvoiceDetails {
 
   const seller = deepFind(parsed, "Podmiot1");
   const buyer = deepFind(parsed, "Podmiot2");
+  // KSeF's FA schema nests line items as FaWiersz inside the invoice; a
+  // JPK_FA import (lib/server/jpk-fa.ts) re-nests its sibling FakturaWiersz
+  // records under the same tag it uses at import time — try both.
   const lineNodes = deepFindAll(parsed, "FaWiersz");
+  const jpkFaLineNodes = lineNodes.length ? [] : deepFindAll(parsed, "FakturaWiersz");
+  const allLineNodes = lineNodes.length ? lineNodes : jpkFaLineNodes;
 
   return {
     invoiceNumber: findFirstString(parsed, ["P_2A", "P_2"]),
     issuedAt: findFirstString(parsed, ["P_1"]),
     currency: findFirstString(parsed, ["KodWaluty"]),
+    // Podmiot1/Podmiot2 are KSeF's nested seller/buyer blocks; JPK_FA has no
+    // such nesting and instead carries seller/buyer as flat P_3x/P_4x/P_5x
+    // fields directly on the invoice (see lib/server/jpk-fa.ts) — fall back
+    // to those when the nested lookup finds nothing.
     seller: {
-      nip: findNip(parsed, "Podmiot1"),
-      name: findFirstString(seller, ["Nazwa", "ImieNazwisko"]),
-      address: findAddress(seller),
+      nip: findNip(parsed, "Podmiot1") ?? findFirstString(parsed, ["P_4B"]),
+      name: findFirstString(seller, ["Nazwa", "ImieNazwisko"]) ?? findFirstString(parsed, ["P_3C"]),
+      address: findAddress(seller) ?? findFirstString(parsed, ["P_3D"]),
     },
     buyer: {
-      nip: findNip(parsed, "Podmiot2"),
-      name: findFirstString(buyer, ["Nazwa", "ImieNazwisko"]),
-      address: findAddress(buyer),
+      nip: findNip(parsed, "Podmiot2") ?? findFirstString(parsed, ["P_5B"]),
+      name: findFirstString(buyer, ["Nazwa", "ImieNazwisko"]) ?? findFirstString(parsed, ["P_3A"]),
+      address: findAddress(buyer) ?? findFirstString(parsed, ["P_3B"]),
     },
-    lines: lineNodes.map((line) => ({
+    lines: allLineNodes.map((line) => ({
       name: findFirstString(line, ["P_7"]),
       quantity: findFirstString(line, ["P_8B"]),
       unit: findFirstString(line, ["P_8A"]),
