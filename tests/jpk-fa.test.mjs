@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { parseJpkFaSalesInvoices } from "../lib/server/jpk-fa.ts";
+import { parseInvoiceDetails } from "../lib/server/ksef/client.ts";
 
 // Trimmed from a real JPK_FA(4) export (dummy "Testowa"/"Testowy" data).
 // Real-world JPK_FA uses all-lowercase tags, unlike KSeF's PascalCase FA
@@ -45,6 +46,24 @@ const realJpkFaSample = `<?xml version="1.0" encoding="utf-8"?>
     <tns:liczbafaktur>2</tns:liczbafaktur>
     <tns:wartoscfaktur>90.00</tns:wartoscfaktur>
   </tns:fakturactrl>
+  <tns:fakturawiersz>
+    <tns:p_2b>16/FV/2024</tns:p_2b>
+    <tns:p_7>Galanteria skórzana</tns:p_7>
+    <tns:p_8a>szt</tns:p_8a>
+    <tns:p_8b>1.0000</tns:p_8b>
+    <tns:p_9a>83.33</tns:p_9a>
+    <tns:p_11>83.33</tns:p_11>
+    <tns:p_12>8</tns:p_12>
+  </tns:fakturawiersz>
+  <tns:fakturawiersz>
+    <tns:p_2b>18/FV/2024</tns:p_2b>
+    <tns:p_7>Krzesło ogrodowe</tns:p_7>
+    <tns:p_8a>szt</tns:p_8a>
+    <tns:p_8b>1.0000</tns:p_8b>
+    <tns:p_9a>83.33</tns:p_9a>
+    <tns:p_11>83.33</tns:p_11>
+    <tns:p_12>8</tns:p_12>
+  </tns:fakturawiersz>
 </tns:jpk>`;
 
 test("parseJpkFaSalesInvoices handles real all-lowercase JPK_FA(4) tags", () => {
@@ -70,4 +89,29 @@ test("parseJpkFaSalesInvoices handles real all-lowercase JPK_FA(4) tags", () => 
 
 test("parseJpkFaSalesInvoices throws a clear error when no invoices are found", () => {
   assert.throws(() => parseJpkFaSalesInvoices("<tns:jpk><tns:naglowek/></tns:jpk>"), /Nie znaleziono/);
+});
+
+test("line items (sibling FakturaWiersz records) are joined onto their invoice by P_2B/P_2A and survive re-parsing by the preview renderer", () => {
+  const result = parseJpkFaSalesInvoices(realJpkFaSample);
+  const [first, second] = result.invoices;
+
+  assert.ok(first.rawXml.includes("Galanteria skórzana"));
+  assert.ok(!first.rawXml.includes("Krzesło ogrodowe"), "invoice 1's line items must not include invoice 2's line");
+
+  // The stored rawXml is what the "Podgląd" preview later re-parses via
+  // parseInvoiceDetails (lib/server/ksef/client.ts) — confirm that pass also
+  // recovers seller/buyer/line-item data from JPK_FA's flat field names,
+  // not just KSeF's nested Podmiot1/Podmiot2/FaWiersz structure.
+  const details = parseInvoiceDetails(first.rawXml);
+  assert.equal(details.seller.nip, "5271048000");
+  assert.equal(details.seller.name, null); // no P_3C in this trimmed sample
+  assert.equal(details.buyer.nip, "5671920807");
+  assert.equal(details.buyer.name, "Testowy klient 1");
+  assert.equal(details.lines.length, 1);
+  assert.equal(details.lines[0].name, "Galanteria skórzana");
+  assert.equal(details.lines[0].netAmount, 83.33);
+
+  const detailsSecond = parseInvoiceDetails(second.rawXml);
+  assert.equal(detailsSecond.lines.length, 1);
+  assert.equal(detailsSecond.lines[0].name, "Krzesło ogrodowe");
 });
