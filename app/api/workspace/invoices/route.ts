@@ -91,6 +91,26 @@ export async function POST(request: NextRequest) {
       if (!company.nip) throw new HttpError(400, "Firma klienta nie ma ustawionego NIP-u — uzupełnij go przed wystawieniem faktury.");
       const sellerNip = company.nip;
 
+      // KSeF authenticates the session under ksef_connections.nip and checks
+      // that against Podmiot1.NIP on the invoice — if these two NIPs don't
+      // match, KSeF rejects with a generic "Nieprawidłowy zakres uprawnień"
+      // (410) that gives no hint the actual cause was a stale/mismatched
+      // connection NIP. Catch it here instead, before ever contacting KSeF.
+      const connectionResult = await client.query<{ nip: string; status: string }>(
+        "select nip, status from ksef_connections where tenant_id = $1 and client_company_id = $2",
+        [session.tenantId, clientCompanyId],
+      );
+      const connection = connectionResult.rows[0];
+      if (!connection) {
+        throw new HttpError(400, "Ta firma klienta nie ma podłączonego konta KSeF — podłącz je w zakładce Integracje.");
+      }
+      if (connection.nip !== sellerNip) {
+        throw new HttpError(
+          400,
+          `NIP połączenia KSeF (${connection.nip}) nie zgadza się z NIP-em firmy klienta (${sellerNip}). KSeF odrzuci fakturę, bo token uwierzytelnia się w kontekście innego NIP-u niż sprzedawca na fakturze — popraw NIP połączenia w zakładce Integracje albo profil firmy klienta.`,
+        );
+      }
+
       let sellerAddress: string = company.address ?? "";
       if (!sellerAddress) {
         if (!companyAddress) throw new HttpError(400, "Uzupełnij adres firmy klienta — jest wymagany na fakturze.");
