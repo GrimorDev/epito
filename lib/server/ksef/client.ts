@@ -237,6 +237,7 @@ export async function refreshAccessToken(
 
 export type InvoiceMetadata = {
   ksefNumber: string;
+  invoiceNumber: string | null;
   issueDate: string;
   sellerNip: string | null;
   buyerIdentifier: string | null;
@@ -251,6 +252,11 @@ function normalizeInvoiceMetadata(row: Record<string, unknown>): InvoiceMetadata
   const buyer = row.buyer as Record<string, unknown> | undefined;
   return {
     ksefNumber,
+    // "Numer faktury nadany przez wystawcę" — the issuer's own invoice
+    // number (our P_2), not a KSeF-generated value. Lets the sync worker
+    // recognize invoices Epito itself issued instead of re-importing them
+    // as a second, separate document once KSeF starts serving them back.
+    invoiceNumber: typeof row.invoiceNumber === "string" ? row.invoiceNumber : null,
     issueDate: typeof row.issueDate === "string" ? row.issueDate : new Date().toISOString(),
     sellerNip: typeof seller?.nip === "string" ? seller.nip : null,
     buyerIdentifier: typeof buyer?.identifier === "string" ? buyer.identifier : null,

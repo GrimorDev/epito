@@ -179,6 +179,11 @@ function normalizeInvoiceMetadata(row) {
   if (typeof ksefNumber !== "string" || !ksefNumber) return null;
   return {
     ksefNumber,
+    // "Numer faktury nadany przez wystawcę" — the issuer's own invoice
+    // number (our P_2), not a KSeF-generated value. Lets the sync worker
+    // recognize invoices Epito itself issued instead of re-importing them
+    // as a second, separate document once KSeF starts serving them back.
+    invoiceNumber: typeof row.invoiceNumber === "string" ? row.invoiceNumber : null,
     issueDate: typeof row.issueDate === "string" ? row.issueDate : new Date().toISOString(),
     sellerNip: typeof row.seller?.nip === "string" ? row.seller.nip : null,
     buyerIdentifier: typeof row.buyer?.identifier === "string" ? row.buyer.identifier : null,
