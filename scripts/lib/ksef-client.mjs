@@ -317,6 +317,10 @@ export async function getSessionInvoiceStatus(environment, accessToken, sessionR
   return {
     code: expectField(result.status?.code, "status.code", "sessions.invoiceStatus"),
     description: result.status?.description ?? "",
+    // On rejection (e.g. code 410) this carries the actual reason, such as
+    // "Kontekst X nie jest uprawniony do wystawienia faktury w imieniu
+    // sprzedawcy (NIP: Y)" — description alone is too generic to act on.
+    details: result.status?.details ?? [],
     ksefNumber: result.ksefNumber ?? null,
     upoDownloadUrl: result.upoDownloadUrl ?? null,
   };
