@@ -10,13 +10,16 @@ import {
   LayoutDashboard,
   LogOut,
   Moon,
+  Pencil,
   Plug,
   Plus,
   RefreshCw,
   Settings,
   Sun,
+  Trash2,
   Users,
   WalletCards,
+  X,
 } from "lucide-react";
 import styles from "../secure.module.css";
 import { ClientPortal } from "../panel/page";
@@ -324,7 +327,7 @@ export function OfficeWorkspacePage() {
                 <div className={styles.twoColumns}>
                   <section className={styles.panel}>
                     <header className={styles.panelHeader}><div><h2>Firmy obsługiwane przez biuro</h2><p>Każdy rekord jest izolowany identyfikatorem organizacji.</p></div></header>
-                    <CompaniesTable companies={data.companies} />
+                    <CompaniesTable companies={data.companies} editable={canCreateClients} onChanged={loadOverview} />
                   </section>
                   {canCreateClients ? (
                     <section className={`${styles.panel} ${styles.formPanel}`} id="new-client">
@@ -480,9 +483,112 @@ export function OfficeWorkspacePage() {
   );
 }
 
-function CompaniesTable({ companies }: { companies: Overview["companies"] }) {
+function CompaniesTable({
+  companies,
+  editable = false,
+  onChanged,
+}: {
+  companies: Overview["companies"];
+  editable?: boolean;
+  onChanged?: () => Promise<void> | void;
+}) {
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [draftName, setDraftName] = useState("");
+  const [draftNip, setDraftNip] = useState("");
+  const [draftEmail, setDraftEmail] = useState("");
+  const [draftPhone, setDraftPhone] = useState("");
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState("");
+
   if (!companies.length) return <Empty title="Brak klientów" text="Dodaj pierwszą firmę, aby rozpocząć pracę na rzeczywistych danych." />;
-  return <div className={styles.tableWrap}><table className={styles.table}><thead><tr><th>Firma</th><th>Kontakt</th><th>Dokumenty</th><th>Płatności</th><th>Status</th></tr></thead><tbody>{companies.map((company) => <tr key={company.id}><td><strong>{company.name}</strong><small>{company.nip ? `NIP ${company.nip}` : "Bez NIP"}</small></td><td>{company.email || company.phone || "Nie podano"}</td><td>{company.documents_count}</td><td>{company.payments_count}</td><td><span className={styles.status}>{company.status === "active" ? "Aktywny" : company.status}</span></td></tr>)}</tbody></table></div>;
+
+  function beginEdit(company: Overview["companies"][number]) {
+    setEditingId(company.id);
+    setDraftName(company.name);
+    setDraftNip(company.nip || "");
+    setDraftEmail(company.email || "");
+    setDraftPhone(company.phone || "");
+    setError("");
+  }
+
+  async function saveEdit(clientId: string) {
+    setPending(true);
+    setError("");
+    try {
+      const response = await fetch(`/api/workspace/clients/${clientId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: draftName, nip: draftNip, email: draftEmail, phone: draftPhone }),
+      });
+      const payload = (await response.json()) as { error?: string };
+      if (!response.ok) throw new Error(payload.error || "Nie udało się zapisać zmian.");
+      setEditingId(null);
+      await onChanged?.();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Nie udało się zapisać zmian.");
+    } finally {
+      setPending(false);
+    }
+  }
+
+  async function deleteClient(clientId: string, name: string) {
+    if (!window.confirm(`Usunąć klienta „${name}”? Dokumenty i płatności pozostaną w historii.`)) return;
+    setPending(true);
+    setError("");
+    try {
+      const response = await fetch(`/api/workspace/clients/${clientId}`, { method: "DELETE" });
+      const payload = (await response.json()) as { error?: string };
+      if (!response.ok) throw new Error(payload.error || "Nie udało się usunąć klienta.");
+      await onChanged?.();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Nie udało się usunąć klienta.");
+    } finally {
+      setPending(false);
+    }
+  }
+
+  return (
+    <div className={styles.tableWrap}>
+      {error ? <div className={styles.error}>{error}</div> : null}
+      <table className={styles.table}>
+        <thead>
+          <tr><th>Firma</th><th>Kontakt</th><th>Dokumenty</th><th>Płatności</th><th>Status</th>{editable ? <th /> : null}</tr>
+        </thead>
+        <tbody>
+          {companies.map((company) =>
+            editingId === company.id ? (
+              <tr key={company.id}>
+                <td colSpan={editable ? 6 : 5}>
+                  <div className={styles.singleForm} style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr) auto auto", gap: 8, alignItems: "center" }}>
+                    <input value={draftName} onChange={(event) => setDraftName(event.target.value)} placeholder="Nazwa firmy" maxLength={180} />
+                    <input value={draftNip} onChange={(event) => setDraftNip(event.target.value)} placeholder="NIP" inputMode="numeric" maxLength={10} />
+                    <input value={draftEmail} onChange={(event) => setDraftEmail(event.target.value)} placeholder="E-mail" type="email" maxLength={254} />
+                    <input value={draftPhone} onChange={(event) => setDraftPhone(event.target.value)} placeholder="Telefon" type="tel" maxLength={40} />
+                    <button className={styles.buttonPrimary} type="button" disabled={pending} onClick={() => void saveEdit(company.id)}>{pending ? "Zapisuję…" : "Zapisz"}</button>
+                    <button type="button" disabled={pending} onClick={() => setEditingId(null)} aria-label="Anuluj"><X size={16} /></button>
+                  </div>
+                </td>
+              </tr>
+            ) : (
+              <tr key={company.id}>
+                <td><strong>{company.name}</strong><small>{company.nip ? `NIP ${company.nip}` : "Bez NIP"}</small></td>
+                <td>{company.email || company.phone || "Nie podano"}</td>
+                <td>{company.documents_count}</td>
+                <td>{company.payments_count}</td>
+                <td><span className={styles.status}>{company.status === "active" ? "Aktywny" : company.status}</span></td>
+                {editable ? (
+                  <td>
+                    <button type="button" onClick={() => beginEdit(company)} aria-label={`Edytuj ${company.name}`}><Pencil size={16} /></button>
+                    <button type="button" disabled={pending} onClick={() => void deleteClient(company.id, company.name)} aria-label={`Usuń ${company.name}`}><Trash2 size={16} /></button>
+                  </td>
+                ) : null}
+              </tr>
+            ),
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
 }
 
 function DocumentsTable({ documents }: { documents: Overview["documents"] }) {

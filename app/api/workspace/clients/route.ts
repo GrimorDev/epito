@@ -36,7 +36,7 @@ export async function POST(request: NextRequest) {
         [session.tenantId, name, nip || null, email || null, phone || null],
       );
       await client.query(
-        "insert into audit_log (tenant_id, actor_user_id, action, entity_type, entity_id, after_data) values ($1, $2, 'client.created', 'client_company', $3, jsonb_build_object('name', $4, 'nip', $5::text))",
+        "insert into audit_log (tenant_id, actor_user_id, action, entity_type, entity_id, after_data) values ($1, $2, 'client.created', 'client_company', $3, jsonb_build_object('name', $4::text, 'nip', $5::text))",
         [session.tenantId, session.userId, result.rows[0].id, name, nip || null],
       );
       return result.rows[0];
