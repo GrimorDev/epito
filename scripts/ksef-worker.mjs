@@ -431,7 +431,7 @@ async function handleInvoiceIssue(job) {
       invoiceRow.ksef_invoice_reference,
     );
     console.log(
-      `Invoice ${invoiceRow.invoice_number} (${invoiceId}) KSeF status: code=${statusResult.code} description="${statusResult.description}"`,
+      `Invoice ${invoiceRow.invoice_number} (${invoiceId}) KSeF status: code=${statusResult.code} description="${statusResult.description}"${statusResult.details.length ? ` details=${JSON.stringify(statusResult.details)}` : ""}`,
     );
 
     if (statusResult.code === 100 || statusResult.code === 150) {
@@ -500,7 +500,8 @@ async function handleInvoiceIssue(job) {
     // permissions, etc.) — see faktury/weryfikacja-faktury.md for the full
     // code table. Not auto-retried: KSeF gave a definitive answer.
     await withTenant(tenantId, actorUserId, async (client) => {
-      const message = statusResult.description || `Błąd KSeF (${statusResult.code})`;
+      const reason = statusResult.details.length ? statusResult.details.join("; ") : statusResult.description;
+      const message = reason || `Błąd KSeF (${statusResult.code})`;
       await client.query(
         "update issued_invoices set status = 'rejected', error_message = $1, updated_at = now() where id = $2",
         [message.slice(0, 500), invoiceId],
@@ -511,8 +512,8 @@ async function handleInvoiceIssue(job) {
         ]);
       }
       await client.query(
-        "insert into audit_log (tenant_id, actor_user_id, action, entity_type, entity_id, after_data) values ($1, $2, 'invoice.rejected', 'issued_invoice', $3, jsonb_build_object('code', $4::int, 'description', $5::text))",
-        [tenantId, actorUserId, invoiceId, statusResult.code, statusResult.description],
+        "insert into audit_log (tenant_id, actor_user_id, action, entity_type, entity_id, after_data) values ($1, $2, 'invoice.rejected', 'issued_invoice', $3, jsonb_build_object('code', $4::int, 'description', $5::text, 'details', $6::jsonb))",
+        [tenantId, actorUserId, invoiceId, statusResult.code, statusResult.description, JSON.stringify(statusResult.details)],
       );
     });
   } catch (error) {

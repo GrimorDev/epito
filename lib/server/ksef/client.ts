@@ -415,6 +415,7 @@ export async function closeOnlineSession(
 export type SessionInvoiceStatus = {
   code: number;
   description: string;
+  details: string[];
   ksefNumber: string | null;
   upoDownloadUrl: string | null;
 };
@@ -429,7 +430,7 @@ export async function getSessionInvoiceStatus(
   const result = await requestJson<{
     ksefNumber?: string | null;
     upoDownloadUrl?: string | null;
-    status?: { code?: number; description?: string };
+    status?: { code?: number; description?: string; details?: string[] | null };
   }>(
     `${baseUrl}/sessions/${encodeURIComponent(sessionReferenceNumber)}/invoices/${encodeURIComponent(invoiceReferenceNumber)}`,
     { method: "GET", headers: { Authorization: `Bearer ${accessToken}` } },
@@ -439,6 +440,10 @@ export async function getSessionInvoiceStatus(
   return {
     code: expectField(result.status?.code, "status.code", "sessions.invoiceStatus"),
     description: result.status?.description ?? "",
+    // On rejection (e.g. code 410) this carries the actual reason, such as
+    // "Kontekst X nie jest uprawniony do wystawienia faktury w imieniu
+    // sprzedawcy (NIP: Y)" — description alone is too generic to act on.
+    details: result.status?.details ?? [],
     ksefNumber: result.ksefNumber ?? null,
     upoDownloadUrl: result.upoDownloadUrl ?? null,
   };
