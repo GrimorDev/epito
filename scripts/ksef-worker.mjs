@@ -192,6 +192,46 @@ async function handleKsefSync(job) {
       });
       if (alreadyStored) continue;
 
+      // A "sales" invoice we're the seller on may be one Epito itself
+      // issued (lib/server/invoice-fa3.ts + the invoice.issue job) — that
+      // invoice already has a richer document (structured line items, our
+      // own generated XML) linked via issued_invoices.document_id. Without
+      // this check, whichever process (this periodic sync, or the
+      // invoice-issue worker's own polling) discovers KSeF's acceptance
+      // first wins the ksef_number-based dedup above, and the loser creates
+      // a second, duplicate document for the same real invoice. Matching by
+      // invoice_number instead of ksef_number closes that race, since
+      // invoice_number is known from the moment the invoice is created —
+      // long before KSeF ever assigns a ksefNumber to anything.
+      if (invoice.category === "sales" && invoice.invoiceNumber) {
+        const ownIssuedInvoice = await withTenant(tenantId, actorUserId, async (client) => {
+          const result = await client.query(
+            "select id, document_id, ksef_number from issued_invoices where tenant_id = $1 and client_company_id = $2 and invoice_number = $3",
+            [tenantId, connectionRow.client_company_id, invoice.invoiceNumber],
+          );
+          return result.rows[0] || null;
+        });
+        if (ownIssuedInvoice) {
+          if (!ownIssuedInvoice.ksef_number) {
+            // Self-heal: our own invoice-issue polling hasn't caught up yet
+            // (or died) — record the ksefNumber now instead of only skipping.
+            await withTenant(tenantId, actorUserId, async (client) => {
+              await client.query(
+                "update issued_invoices set status = 'accepted', ksef_number = $1, updated_at = now() where id = $2",
+                [invoice.ksefNumber, ownIssuedInvoice.id],
+              );
+              if (ownIssuedInvoice.document_id) {
+                await client.query(
+                  "update documents set status = 'verified', ksef_number = $1, updated_at = now() where id = $2",
+                  [invoice.ksefNumber, ownIssuedInvoice.document_id],
+                );
+              }
+            });
+          }
+          continue;
+        }
+      }
+
       let xml;
       try {
         xml = await fetchInvoice(connectionRow.environment, auth.accessToken, invoice.ksefNumber);
