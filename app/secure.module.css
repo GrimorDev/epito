@@ -354,6 +354,8 @@
 }
 .error { background: #fff0ef; color: #a52e2e; border: 1px solid #f4cbc7; }
 .success { background: #ebf8da; color: #315f18; border: 1px solid #d1e8b4; }
+.success a { color: #315f18; font-weight: 700; }
+.success button { display: inline-flex; align-items: center; gap: 5px; margin-left: 10px; border: 1px solid #d1e8b4; background: #fff; color: #315f18; border-radius: 7px; padding: 4px 9px; font-size: 12px; cursor: pointer; }
 
 .twoColumns { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(330px, 0.7fr); gap: 20px; align-items: start; }
 .stack { display: grid; gap: 20px; }

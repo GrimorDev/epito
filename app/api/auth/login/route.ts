@@ -5,6 +5,8 @@ import {
   createSession,
   isProductionBackendEnabled,
   isSameOrigin,
+  resolveRequestHost,
+  resolveTenantSlugFromHost,
   setSessionCookie,
 } from "@/lib/server/auth";
 import { verifyPassword } from "@/lib/server/passwords";
@@ -50,10 +52,34 @@ export async function POST(request: NextRequest) {
   }
 
   const memberships = await listUserMemberships(identity.userId);
-  const primaryMembership = memberships[0] ?? null;
-  if (identity.platformRole !== "supervisor" && !primaryMembership) {
-    return NextResponse.json({ error: "Konto nie ma dostępu do żadnej organizacji." }, { status: 403 });
+
+  // Each tenant gets its own portal subdomain (client2393.epito.pl) and a
+  // regular member may only log in through it — logging in on the bare
+  // domain, or another tenant's subdomain, must fail even with the right
+  // password. Supervisors manage the platform from the main domain and
+  // aren't tenant members, so this doesn't apply to them.
+  //
+  // Enforcement only activates once EPITO_BASE_DOMAIN is actually configured
+  // — without it, resolveTenantSlugFromHost can never match anything, and
+  // this must fall back to today's behavior rather than locking every
+  // regular user out because the operator hasn't finished DNS/subdomain
+  // setup yet.
+  const baseDomainConfigured = Boolean(process.env.EPITO_BASE_DOMAIN?.trim());
+  const hostSlug = resolveTenantSlugFromHost(resolveRequestHost(request));
+  const matchedMembership = hostSlug
+    ? memberships.find((membership) => membership.tenantSlug === hostSlug) ?? null
+    : null;
+
+  if (identity.platformRole !== "supervisor") {
+    if (!memberships.length) {
+      return NextResponse.json({ error: "Konto nie ma dostępu do żadnej organizacji." }, { status: 403 });
+    }
+    if (baseDomainConfigured && !matchedMembership) {
+      return NextResponse.json({ error: "To konto nie jest przypisane do tej organizacji." }, { status: 403 });
+    }
   }
+
+  const primaryMembership = matchedMembership ?? memberships[0] ?? null;
 
   const token = await createSession({
     userId: identity.userId,

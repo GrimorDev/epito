@@ -112,7 +112,11 @@ export async function POST(request: NextRequest) {
       );
       return result.rows[0];
     });
-    return NextResponse.json({ ok: true, tenantId: created.tenant_id }, { status: 201 });
+    const baseDomain = process.env.EPITO_BASE_DOMAIN?.trim() || "localhost";
+    return NextResponse.json(
+      { ok: true, tenantId: created.tenant_id, portalHost: `${slug}.${baseDomain}` },
+      { status: 201 },
+    );
   } catch (error) {
     if (databaseStatus(error) === "23505") {
       return NextResponse.json({ error: "Taki adres portalu, NIP lub e-mail już istnieje." }, { status: 409 });

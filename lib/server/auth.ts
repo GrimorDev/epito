@@ -24,20 +24,51 @@ export function isProductionBackendEnabled() {
   return process.env.EPITO_BACKEND_SERVICES === "required";
 }
 
+// Behind the reverse proxy (nginx-proxy-manager, see PORTAINER.md) the real
+// requested host arrives as X-Forwarded-Host, not Host — used both for CSRF
+// origin checks below and for resolving which tenant's subdomain a request
+// came in on.
+export function resolveRequestHost(request: NextRequest): string {
+  const forwardedHost = request.headers.get("x-forwarded-host")?.split(",")[0]?.trim();
+  return forwardedHost || request.headers.get("host") || request.nextUrl.host;
+}
+
 export function isSameOrigin(request: NextRequest) {
   const origin = request.headers.get("origin");
   if (!origin) return false;
 
   try {
     const supplied = new URL(origin);
-    const forwardedHost = request.headers.get("x-forwarded-host")?.split(",")[0]?.trim();
     const forwardedProto = request.headers.get("x-forwarded-proto")?.split(",")[0]?.trim();
-    const expectedHost = forwardedHost || request.headers.get("host") || request.nextUrl.host;
+    const expectedHost = resolveRequestHost(request);
     const expectedProtocol = forwardedProto || request.nextUrl.protocol.replace(":", "");
     return supplied.host === expectedHost && supplied.protocol === `${expectedProtocol}:`;
   } catch {
     return false;
   }
+}
+
+// Subdomains that are never a tenant's own portal — reserved for the
+// marketing site, platform admin, mail, etc. A request on any of these (or
+// on the bare base domain) has no tenant context.
+const RESERVED_HOST_LABELS = new Set(["www", "app", "admin", "api", "mail", "ftp"]);
+
+// Extracts "client2393" out of "client2393.epito.pl" (or its :port variant).
+// Returns null for the bare base domain, reserved labels, an unrelated
+// domain entirely, or when EPITO_BASE_DOMAIN isn't configured — any of which
+// means "no tenant-specific portal, this is the main/admin domain".
+export function resolveTenantSlugFromHost(hostname: string): string | null {
+  const baseDomain = process.env.EPITO_BASE_DOMAIN?.trim().toLowerCase();
+  if (!baseDomain) return null;
+
+  const host = hostname.split(":")[0]?.trim().toLowerCase() || "";
+  if (!host || host === baseDomain) return null;
+  if (!host.endsWith(`.${baseDomain}`)) return null;
+
+  const label = host.slice(0, -(baseDomain.length + 1));
+  if (!label || label.includes(".") || RESERVED_HOST_LABELS.has(label)) return null;
+  if (!/^[a-z0-9][a-z0-9-]{2,62}$/.test(label)) return null;
+  return label;
 }
 
 export function clientIp(request: NextRequest) {
