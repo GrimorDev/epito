@@ -57,13 +57,19 @@ export async function GET(request: NextRequest) {
         structured_data: Record<string, unknown>;
         company_name: string;
         created_at: string;
+        issued_invoice_id: string | null;
+        issued_invoice_status: string | null;
+        issued_invoice_error: string | null;
       }>(`
         select document.id, document.name, document.category, document.status,
           document.document_year, document.document_month, document.amount::text,
           document.currency, document.issued_at::text, document.mime_type, document.file_size,
-          document.structured_data, company.name as company_name, document.created_at
+          document.structured_data, company.name as company_name, document.created_at,
+          invoice.id as issued_invoice_id, invoice.status as issued_invoice_status,
+          invoice.error_message as issued_invoice_error
         from documents document
         join client_companies company on company.id = document.client_company_id
+        left join issued_invoices invoice on invoice.document_id = document.id
         where document.deleted_at is null
         order by document.created_at desc
         limit 250
