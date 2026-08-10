@@ -6,6 +6,7 @@ import { FormEvent, useCallback, useEffect, useState } from "react";
 import {
   ArrowRight,
   Building2,
+  Copy,
   ExternalLink,
   LayoutDashboard,
   LogOut,
@@ -63,6 +64,7 @@ export default function SupervisorPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
+  const [createdPortalHost, setCreatedPortalHost] = useState("");
   const [theme, setTheme] = useState<"light" | "dark">("light");
 
   const loadTenants = useCallback(async () => {
@@ -128,11 +130,12 @@ export default function SupervisorPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(Object.fromEntries(new FormData(formElement).entries())),
       });
-      const payload = (await response.json()) as { error?: string };
+      const payload = (await response.json()) as { error?: string; portalHost?: string };
       if (!response.ok) throw new Error(payload.error || "Nie udało się utworzyć organizacji.");
       formElement.reset();
       await Promise.all([loadTenants(), loadUsers()]);
       setModalOpen(false);
+      setCreatedPortalHost(payload.portalHost || "");
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Nie udało się utworzyć organizacji.");
     } finally {
@@ -183,6 +186,15 @@ export default function SupervisorPage() {
               {section !== "users" && section !== "settings" ? <button className={styles.buttonPrimary} type="button" onClick={() => setModalOpen(true)}><Plus size={19} /> Nowa organizacja</button> : null}
             </div>
           </header>
+
+          {createdPortalHost ? (
+            <div className={styles.success} role="status">
+              <strong>Organizacja utworzona.</strong> Link logowania dla tego klienta:{" "}
+              <a href={`https://${createdPortalHost}`} target="_blank" rel="noreferrer">{createdPortalHost}</a>
+              <button type="button" onClick={() => void navigator.clipboard.writeText(`https://${createdPortalHost}`)}><Copy size={15} /> Kopiuj</button>
+              <button type="button" onClick={() => setCreatedPortalHost("")} aria-label="Zamknij"><X size={15} /></button>
+            </div>
+          ) : null}
 
           {loading ? <div className={styles.loading}>Ładowanie danych platformy…</div> : (
             <div className={styles.content}>
