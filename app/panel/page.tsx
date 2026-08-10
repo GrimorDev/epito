@@ -139,6 +139,16 @@ export function ClientPortal({ mode }: { mode: PortalMode }) {
   const [paying, setPaying] = useState(false);
   const [paymentSuccess, setPaymentSuccess] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [seenNotificationIds, setSeenNotificationIds] = useState<{ payments: string[]; documents: string[] }>(() => {
+    if (typeof window === "undefined") return { payments: [], documents: [] };
+    try {
+      const raw = window.localStorage.getItem("epito-notifications-seen");
+      const parsed = raw ? JSON.parse(raw) : null;
+      return { payments: Array.isArray(parsed?.payments) ? parsed.payments : [], documents: Array.isArray(parsed?.documents) ? parsed.documents : [] };
+    } catch {
+      return { payments: [], documents: [] };
+    }
+  });
   const [profileOpen, setProfileOpen] = useState(false);
   const [mobileMenu, setMobileMenu] = useState(false);
   const [messageSent, setMessageSent] = useState(false);
@@ -222,6 +232,21 @@ export function ClientPortal({ mode }: { mode: PortalMode }) {
 
   const duePayments = payments.filter((payment) => payment.status !== "paid");
   const nextPayment = duePayments[0];
+  const actionDocumentsList = documents.filter((document) => document.statusCode ? document.statusCode !== "verified" : document.status !== "Przetworzone");
+  const newDuePayments = duePayments.filter((payment) => !seenNotificationIds.payments.includes(String(payment.id)));
+  const newActionDocuments = actionDocumentsList.filter((document) => !seenNotificationIds.documents.includes(String(document.id)));
+
+  function markNotificationsSeen() {
+    const next = { payments: duePayments.map((payment) => String(payment.id)), documents: actionDocumentsList.map((document) => String(document.id)) };
+    setSeenNotificationIds(next);
+    if (typeof window !== "undefined") window.localStorage.setItem("epito-notifications-seen", JSON.stringify(next));
+  }
+
+  function openNotification(target: Section) {
+    markNotificationsSeen();
+    setNotificationsOpen(false);
+    selectSection(target);
+  }
 
   const navigation: { label: Section; icon: LucideIcon; badge?: string }[] = [
     { label: "Pulpit", icon: LayoutDashboard },
@@ -380,15 +405,37 @@ export function ClientPortal({ mode }: { mode: PortalMode }) {
             </button>
 
             <div className="notification-wrap">
-              <button className="notification-button" onClick={() => setNotificationsOpen((value) => !value)} aria-label="Powiadomienia">
+              <button
+                className="notification-button"
+                onClick={() => setNotificationsOpen((value) => {
+                  const next = !value;
+                  if (next && production) markNotificationsSeen();
+                  return next;
+                })}
+                aria-label="Powiadomienia"
+              >
                 <Bell size={21} />
-                {(production ? actionDocuments + duePayments.length : 2) > 0 ? <span>{production ? actionDocuments + duePayments.length : 2}</span> : null}
+                {(production ? newDuePayments.length + newActionDocuments.length : 2) > 0 ? <span>{production ? newDuePayments.length + newActionDocuments.length : 2}</span> : null}
               </button>
               <AnimatePresence>
                 {notificationsOpen && (
                   <motion.div className="notification-popover" initial={{ opacity: 0, y: 8, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 6, scale: 0.98 }} transition={{ duration: 0.18 }}>
                     <div><strong>Powiadomienia</strong><button onClick={() => setNotificationsOpen(false)} aria-label="Zamknij"><X size={20} /></button></div>
-                    {production ? <><p><span className="notification-icon success"><Check size={15} /></span><b>{duePayments.length} płatności oczekuje</b><small>Dane bieżące</small></p><p><span className="notification-icon warning"><FileText size={15} /></span><b>{actionDocuments} dokumentów wymaga uwagi</b><small>Dane bieżące</small></p></> : <><p><span className="notification-icon success"><Check size={15} /></span><b>Wyliczenie VAT jest gotowe</b><small>Dzisiaj, 08:42</small></p><p><span className="notification-icon warning"><FileText size={15} /></span><b>Brakuje umowy leasingu</b><small>Wczoraj, 14:10</small></p></>}
+                    {production ? (
+                      <>
+                        <p role="button" tabIndex={0} onClick={() => openNotification("Płatności")} onKeyDown={(event) => event.key === "Enter" && openNotification("Płatności")}>
+                          <span className="notification-icon success"><Check size={15} /></span><b>{duePayments.length} płatności oczekuje</b><small>Zobacz płatności</small>
+                        </p>
+                        <p role="button" tabIndex={0} onClick={() => openNotification("Dokumenty")} onKeyDown={(event) => event.key === "Enter" && openNotification("Dokumenty")}>
+                          <span className="notification-icon warning"><FileText size={15} /></span><b>{actionDocuments} dokumentów wymaga uwagi</b><small>Zobacz dokumenty</small>
+                        </p>
+                      </>
+                    ) : (
+                      <>
+                        <p><span className="notification-icon success"><Check size={15} /></span><b>Wyliczenie VAT jest gotowe</b><small>Dzisiaj, 08:42</small></p>
+                        <p><span className="notification-icon warning"><FileText size={15} /></span><b>Brakuje umowy leasingu</b><small>Wczoraj, 14:10</small></p>
+                      </>
+                    )}
                   </motion.div>
                 )}
               </AnimatePresence>
