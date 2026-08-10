@@ -56,7 +56,7 @@ type PortalOverview = {
   tenant: { id: string; slug: string; display_name: string; legal_name: string; nip: string | null; settings: { branding?: { accentColor?: string; headerName?: string; logoKey?: string }; notifications?: { email?: boolean; paymentReminders?: boolean } } };
   companies: Array<{ id: string; name: string }>;
   team: Array<{ id: string; email: string; full_name: string; role: string; status: string }>;
-  documents: Array<{ id: string; name: string; category: string; status: string; document_year: number; document_month: number; amount: string | null; currency: string; issued_at: string | null; mime_type: string; file_size: number; structured_data: { analysis?: WorkspaceDocument["analysis"]; manual_override?: Record<string, unknown> }; company_name: string; created_at: string }>;
+  documents: Array<{ id: string; name: string; category: string; status: string; document_year: number; document_month: number; amount: string | null; currency: string; issued_at: string | null; mime_type: string; file_size: number; structured_data: { analysis?: WorkspaceDocument["analysis"]; manual_override?: Record<string, unknown> }; company_name: string; created_at: string; issued_invoice_id: string | null; issued_invoice_status: string | null; issued_invoice_error: string | null }>;
   payments: Array<{ id: string; tax_type: string; period_label: string; amount: string; currency: string; due_date: string; status: string; company_name: string; created_at: string }>;
   stats: { clients_count: number; documents_count: number; payments_due_count: number; payments_due_total: string };
 };
@@ -188,6 +188,9 @@ export function ClientPortal({ mode }: { mode: PortalMode }) {
       issuedAt: document.issued_at,
       analysis: document.structured_data?.analysis || null,
       manualOverride: Boolean(document.structured_data?.manual_override),
+      issuedInvoiceId: document.issued_invoice_id,
+      issuedInvoiceStatus: document.issued_invoice_status,
+      issuedInvoiceError: document.issued_invoice_error,
     })));
   }, [production, router]);
 

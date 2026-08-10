@@ -58,6 +58,17 @@ export type WorkspaceDocument = {
     page_count?: number;
   } | null;
   manualOverride?: boolean;
+  issuedInvoiceId?: string | null;
+  issuedInvoiceStatus?: string | null;
+  issuedInvoiceError?: string | null;
+};
+
+export const issuedInvoiceStatusLabels: Record<string, string> = {
+  queued: "Wysyłka do KSeF w toku",
+  submitted: "Czeka na potwierdzenie z KSeF",
+  accepted: "Zaakceptowana przez KSeF",
+  rejected: "Odrzucona przez KSeF",
+  failed: "Błąd wysyłki",
 };
 
 type DocumentsProps = {
@@ -102,6 +113,7 @@ export function DocumentsWorkspace({ documents, setDocuments, onUpload, onOpenIm
   const [editPending, setEditPending] = useState(false);
   const [fullscreenId, setFullscreenId] = useState<string | number | null>(null);
   const [reanalyzingId, setReanalyzingId] = useState<string | number | null>(null);
+  const [retryingInvoiceId, setRetryingInvoiceId] = useState<string | null>(null);
   const [folders, setFolders] = useState(["Sprzedaż", "Koszty", "Bank", "Umowy"]);
   const [newFolder, setNewFolder] = useState("");
   const [addingFolder, setAddingFolder] = useState(false);
@@ -184,6 +196,21 @@ export function DocumentsWorkspace({ documents, setDocuments, onUpload, onOpenIm
       onNotice?.(reason instanceof Error ? reason.message : "Nie udało się uruchomić analizy.");
     } finally {
       setReanalyzingId(null);
+    }
+  }
+
+  async function retryInvoice(invoiceId: string) {
+    setRetryingInvoiceId(invoiceId);
+    try {
+      const response = await fetch(`/api/workspace/invoices/${invoiceId}/retry`, { method: "POST" });
+      const payload = (await response.json()) as { error?: string };
+      if (!response.ok) throw new Error(payload.error || "Nie udało się ponowić wysyłki.");
+      await onChanged?.();
+      onNotice?.("Faktura została zgłoszona do ponownej wysyłki do KSeF.");
+    } catch (reason) {
+      onNotice?.(reason instanceof Error ? reason.message : "Nie udało się ponowić wysyłki.");
+    } finally {
+      setRetryingInvoiceId(null);
     }
   }
 
@@ -294,8 +321,21 @@ export function DocumentsWorkspace({ documents, setDocuments, onUpload, onOpenIm
                 <div><span>Okres</span><strong>{preview.month} {preview.year}</strong></div>
                 <div><span>Status</span><strong>{preview.status}</strong></div>
                 <div><span>Kwota</span><strong>{preview.amount ?? "Nie dotyczy"}</strong></div>
+                {preview.issuedInvoiceStatus ? <div><span>Status KSeF</span><strong>{issuedInvoiceStatusLabels[preview.issuedInvoiceStatus] || preview.issuedInvoiceStatus}</strong></div> : null}
               </div>
-              {preview.manualOverride ? <div className="analysis-note"><strong>Dane poprawione ręcznie</strong><span>Kwota, status lub data zostały zatwierdzone przez użytkownika i mają pierwszeństwo przed OCR.</span></div> : preview.analysis ? <div className="analysis-note"><strong>{preview.analysis.method === "ocr" ? "Odczyt OCR" : "Tekst z PDF"}{typeof preview.analysis.confidence === "number" && preview.analysis.confidence > 0 ? ` · ${Math.round(preview.analysis.confidence * 100)}% pewności` : ""}</strong><span>{preview.analysis.reason || (preview.analysis.amount_source ? `Kwota znaleziona przy polu „${preview.analysis.amount_source}”.` : "Dane dokumentu zostały przeanalizowane.")}</span></div> : <div className="analysis-note"><strong>{preview.statusCode === "processing" || preview.statusCode === "uploaded" ? "Analiza trwa" : "Brak analizy"}</strong><span>{preview.statusCode === "processing" || preview.statusCode === "uploaded" ? "Worker odczytuje tekst i kwotę. Widok odświeży się automatycznie po zakończeniu." : "Kwotę i metadane możesz uzupełnić ręcznie."}</span></div>}
+              {preview.issuedInvoiceStatus === "failed" || preview.issuedInvoiceStatus === "rejected" ? (
+                <div className="analysis-note">
+                  <strong>{issuedInvoiceStatusLabels[preview.issuedInvoiceStatus] || preview.issuedInvoiceStatus}</strong>
+                  <span>{preview.issuedInvoiceError || "KSeF nie przyjął tej faktury."}</span>
+                </div>
+              ) : null}
+              {(preview.issuedInvoiceStatus === "failed" || preview.issuedInvoiceStatus === "rejected") && preview.issuedInvoiceId ? (
+                <button className="reanalyze-document" onClick={() => void retryInvoice(preview.issuedInvoiceId!)} disabled={retryingInvoiceId === preview.issuedInvoiceId}>
+                  <RefreshCw size={16} className={retryingInvoiceId === preview.issuedInvoiceId ? "spinning" : ""} />
+                  {retryingInvoiceId === preview.issuedInvoiceId ? "Wysyłam ponownie" : "Wyślij ponownie do KSeF"}
+                </button>
+              ) : null}
+              {preview.manualOverride ?<div className="analysis-note"><strong>Dane poprawione ręcznie</strong><span>Kwota, status lub data zostały zatwierdzone przez użytkownika i mają pierwszeństwo przed OCR.</span></div> : preview.analysis ? <div className="analysis-note"><strong>{preview.analysis.method === "ocr" ? "Odczyt OCR" : "Tekst z PDF"}{typeof preview.analysis.confidence === "number" && preview.analysis.confidence > 0 ? ` · ${Math.round(preview.analysis.confidence * 100)}% pewności` : ""}</strong><span>{preview.analysis.reason || (preview.analysis.amount_source ? `Kwota znaleziona przy polu „${preview.analysis.amount_source}”.` : "Dane dokumentu zostały przeanalizowane.")}</span></div> : <div className="analysis-note"><strong>{preview.statusCode === "processing" || preview.statusCode === "uploaded" ? "Analiza trwa" : "Brak analizy"}</strong><span>{preview.statusCode === "processing" || preview.statusCode === "uploaded" ? "Worker odczytuje tekst i kwotę. Widok odświeży się automatycznie po zakończeniu." : "Kwotę i metadane możesz uzupełnić ręcznie."}</span></div>}
               {production && !preview.manualOverride && preview.statusCode !== "processing" ? <button className="reanalyze-document" onClick={() => void reanalyzeDocument(preview.id)} disabled={reanalyzingId === preview.id}><RefreshCw size={16} className={reanalyzingId === preview.id ? "spinning" : ""} />{reanalyzingId === preview.id ? "Dodawanie do kolejki" : "Analizuj ponownie"}</button> : null}
               <div className="preview-actions"><button onClick={() => setFullscreenId(preview.id)}><Maximize2 size={17} /> Pełny ekran</button>{production ? <a className="document-download-link" href={`/api/workspace/documents/${preview.id}`}><Download size={17} /> Pobierz</a> : <button><Download size={17} /> Pobierz</button>}{production && preview.mimeType?.includes("xml") ? <a className="document-download-link" href={`/api/workspace/documents/${preview.id}?format=pdf`}><Download size={17} /> Pobierz PDF</a> : null}<button onClick={() => beginEdit(preview)}><Pencil size={17} /> Dane</button></div>
             </>

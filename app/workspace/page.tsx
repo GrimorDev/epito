@@ -23,7 +23,7 @@ import {
 } from "lucide-react";
 import styles from "../secure.module.css";
 import { ClientPortal } from "../panel/page";
-import { IssueInvoiceModal } from "../panel/workspace-sections";
+import { IssueInvoiceModal, issuedInvoiceStatusLabels } from "../panel/workspace-sections";
 
 type Session = {
   fullName: string;
@@ -37,7 +37,7 @@ type Overview = {
   tenant: { id: string; slug: string; display_name: string; legal_name: string; nip: string | null };
   companies: Array<{ id: string; name: string; nip: string | null; email: string | null; phone: string | null; status: string; created_at: string; documents_count: number; payments_count: number }>;
   team: Array<{ id: string; email: string; full_name: string; role: string; status: string }>;
-  documents: Array<{ id: string; name: string; category: string; status: string; document_year: number; document_month: number; amount: string | null; currency: string; company_name: string; created_at: string }>;
+  documents: Array<{ id: string; name: string; category: string; status: string; document_year: number; document_month: number; amount: string | null; currency: string; company_name: string; created_at: string; issued_invoice_id: string | null; issued_invoice_status: string | null; issued_invoice_error: string | null }>;
   payments: Array<{ id: string; tax_type: string; period_label: string; amount: string; currency: string; due_date: string; status: string; company_name: string; created_at: string }>;
   stats: { clients_count: number; documents_count: number; payments_due_count: number; payments_due_total: string };
   ksefConnections: Array<{ id: string; client_company_id: string; client_company_name: string; environment: string; nip: string; status: string; last_synced_at: string | null; last_error: string | null; created_at: string }>;
@@ -375,7 +375,7 @@ export function OfficeWorkspacePage() {
                       {canCreateClients ? <button className={styles.buttonPrimary} type="button" onClick={() => setShowIssueInvoiceModal(true)}><FileText size={18} /> Wystaw fakturę</button> : null}
                     </header>
                     <FormMessage message={issueInvoiceMessage} />
-                    {data.documents.length ? <DocumentsTable documents={data.documents} /> : <Empty title="Brak dokumentów" text="Dokumenty pojawią się tutaj po imporcie lub synchronizacji z systemem księgowym." />}
+                    {data.documents.length ? <DocumentsTable documents={data.documents} onChanged={loadOverview} /> : <Empty title="Brak dokumentów" text="Dokumenty pojawią się tutaj po imporcie lub synchronizacji z systemem księgowym." />}
                   </section>
                   {canCreateClients ? (
                     <section className={`${styles.panel} ${styles.formPanel}`}>
@@ -591,8 +591,58 @@ function CompaniesTable({
   );
 }
 
-function DocumentsTable({ documents }: { documents: Overview["documents"] }) {
-  return <div className={styles.tableWrap}><table className={styles.table}><thead><tr><th>Dokument</th><th>Klient</th><th>Okres</th><th>Kategoria</th><th>Kwota</th><th>Status</th></tr></thead><tbody>{documents.map((document) => <tr key={document.id}><td><strong>{document.name}</strong><small>Dodano {new Date(document.created_at).toLocaleDateString("pl-PL")}</small></td><td>{document.company_name}</td><td>{String(document.document_month).padStart(2, "0")}.{document.document_year}</td><td>{document.category}</td><td>{document.amount ? formatMoney(document.amount, document.currency) : "—"}</td><td><span className={styles.status}>{document.status}</span></td></tr>)}</tbody></table></div>;
+function DocumentsTable({ documents, onChanged }: { documents: Overview["documents"]; onChanged?: () => Promise<void> | void }) {
+  const [retryingId, setRetryingId] = useState<string | null>(null);
+  const [error, setError] = useState("");
+
+  async function retryInvoice(invoiceId: string) {
+    setRetryingId(invoiceId);
+    setError("");
+    try {
+      const response = await fetch(`/api/workspace/invoices/${invoiceId}/retry`, { method: "POST" });
+      const payload = (await response.json()) as { error?: string };
+      if (!response.ok) throw new Error(payload.error || "Nie udało się ponowić wysyłki.");
+      await onChanged?.();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Nie udało się ponowić wysyłki.");
+    } finally {
+      setRetryingId(null);
+    }
+  }
+
+  return (
+    <div className={styles.tableWrap}>
+      {error ? <div className={styles.error}>{error}</div> : null}
+      <table className={styles.table}>
+        <thead><tr><th>Dokument</th><th>Klient</th><th>Okres</th><th>Kategoria</th><th>Kwota</th><th>Status</th><th>Status KSeF</th></tr></thead>
+        <tbody>
+          {documents.map((document) => (
+            <tr key={document.id}>
+              <td><strong>{document.name}</strong><small>Dodano {new Date(document.created_at).toLocaleDateString("pl-PL")}</small></td>
+              <td>{document.company_name}</td>
+              <td>{String(document.document_month).padStart(2, "0")}.{document.document_year}</td>
+              <td>{document.category}</td>
+              <td>{document.amount ? formatMoney(document.amount, document.currency) : "—"}</td>
+              <td><span className={styles.status}>{document.status}</span></td>
+              <td>
+                {document.issued_invoice_status ? (
+                  <>
+                    <span className={styles.status}>{issuedInvoiceStatusLabels[document.issued_invoice_status] || document.issued_invoice_status}</span>
+                    {document.issued_invoice_error ? <small title={document.issued_invoice_error}>{document.issued_invoice_error}</small> : null}
+                    {(document.issued_invoice_status === "failed" || document.issued_invoice_status === "rejected") && document.issued_invoice_id ? (
+                      <button className={styles.buttonPrimary} type="button" disabled={retryingId === document.issued_invoice_id} onClick={() => void retryInvoice(document.issued_invoice_id!)}>
+                        {retryingId === document.issued_invoice_id ? "Wysyłam…" : "Wyślij ponownie"}
+                      </button>
+                    ) : null}
+                  </>
+                ) : "—"}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
 }
 
 function PaymentsTable({ payments }: { payments: Overview["payments"] }) {
