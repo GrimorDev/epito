@@ -250,7 +250,7 @@ export default function Home() {
         </motion.div>
       </motion.section>
 
-      <motion.section className="faq-section" {...reveal}>
+      <motion.section className="faq-section" id="faq" {...reveal}>
         <div><span className="section-kicker">Najczęstsze pytania</span><h2>Bez drobnego druku.</h2></div>
         <div className="faq-list">
           {faqs.map(([question, answer], index) => <details key={question} open={index === 0}><summary>{question}<span>+</span></summary><p>{answer}</p></details>)}

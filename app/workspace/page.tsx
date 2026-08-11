@@ -250,11 +250,11 @@ export function OfficeWorkspacePage() {
 
   const navigation: Array<{ id: Tab; label: string; icon: typeof LayoutDashboard }> = [
     { id: "overview", label: "Pulpit", icon: LayoutDashboard },
-    { id: "clients", label: "Klienci", icon: Building2 },
-    { id: "team", label: "Zespół", icon: Users },
-    { id: "documents", label: "Dokumenty", icon: FileText },
-    { id: "payments", label: "Płatności", icon: WalletCards },
-    { id: "integrations", label: "Integracje", icon: Plug },
+    { id: "clients", label: `Klienci (${data?.companies.length ?? 0})`, icon: Building2 },
+    { id: "team", label: `Zespół (${data?.team.length ?? 0})`, icon: Users },
+    { id: "documents", label: `Dokumenty (${data?.documents.length ?? 0})`, icon: FileText },
+    { id: "payments", label: `Płatności (${data?.payments.length ?? 0})`, icon: WalletCards },
+    { id: "integrations", label: `Integracje (${data?.ksefConnections.length ?? 0})`, icon: Plug },
     { id: "settings", label: "Ustawienia", icon: Settings },
   ];
 
@@ -277,6 +277,7 @@ export function OfficeWorkspacePage() {
             </div>
           </nav>
           <div className={styles.sidebarBottom}>
+            <Link className={styles.navItem} href="/workspace"><ArrowLeft size={21} /> Powrót do panelu klienta</Link>
             {session?.platformRole === "supervisor" ? <Link className={styles.navItem} href="/admin"><ArrowLeft size={21} /> Panel administracyjny</Link> : null}
             <button className={styles.navItem} type="button" onClick={logout}><LogOut size={21} /> Wyloguj się</button>
           </div>
@@ -296,16 +297,6 @@ export function OfficeWorkspacePage() {
               <div className={styles.headingRow}>
                 <div><h1>{tabLabel[tab]}</h1><p>{data.tenant.legal_name}{data.tenant.nip ? ` · NIP ${data.tenant.nip}` : ""}</p></div>
                 {tab === "clients" && canCreateClients ? <button className={styles.buttonPrimary} type="button" onClick={() => document.getElementById("new-client")?.scrollIntoView({ behavior: "smooth" })}><Plus size={18} /> Dodaj klienta</button> : null}
-              </div>
-
-              <div className={styles.tabs} aria-label="Działy organizacji">
-                <button className={tab === "overview" ? styles.tabActive : styles.tab} type="button" onClick={() => setTab("overview")}>Przegląd</button>
-                <button className={tab === "clients" ? styles.tabActive : styles.tab} type="button" onClick={() => setTab("clients")}>Klienci ({data.companies.length})</button>
-                <button className={tab === "team" ? styles.tabActive : styles.tab} type="button" onClick={() => setTab("team")}>Zespół ({data.team.length})</button>
-                <button className={tab === "documents" ? styles.tabActive : styles.tab} type="button" onClick={() => setTab("documents")}>Dokumenty ({data.documents.length})</button>
-                <button className={tab === "payments" ? styles.tabActive : styles.tab} type="button" onClick={() => setTab("payments")}>Płatności ({data.payments.length})</button>
-                <button className={tab === "integrations" ? styles.tabActive : styles.tab} type="button" onClick={() => setTab("integrations")}>Integracje ({data.ksefConnections.length})</button>
-                <button className={tab === "settings" ? styles.tabActive : styles.tab} type="button" onClick={() => setTab("settings")}>Ustawienia</button>
               </div>
 
               {tab === "overview" ? (
