@@ -15,6 +15,7 @@ import {
   Check,
   ChevronDown,
   CircleHelp,
+  Copy,
   CreditCard,
   FileText,
   FolderOpen,
@@ -44,10 +45,30 @@ type Payment = {
   period: string;
   amount: number;
   due: string;
-  status: "due" | "paid" | "scheduled";
+  status: "draft" | "due" | "scheduled" | "processing" | "paid" | "failed" | "cancelled";
+  currency?: string;
+  companyName?: string;
+  recipientName?: string | null;
+  bankAccountNumber?: string | null;
+  transferTitle?: string | null;
 };
 
 type PortalMode = "demo" | "production";
+
+const payablePaymentStatuses: Payment["status"][] = ["due", "scheduled", "processing", "failed"];
+const clientPaymentStatusLabels: Record<Payment["status"], string> = {
+  draft: "Szkic",
+  due: "Do zapłaty",
+  scheduled: "Zaplanowane",
+  processing: "Przetwarzanie",
+  paid: "Opłacone",
+  failed: "Błąd płatności",
+  cancelled: "Anulowane",
+};
+
+function isPaymentStatus(value: string): value is Payment["status"] {
+  return value in clientPaymentStatusLabels;
+}
 type PortalSession = {
   fullName: string;
   email: string;
@@ -59,7 +80,7 @@ type PortalOverview = {
   companies: Array<{ id: string; name: string }>;
   team: Array<{ id: string; email: string; full_name: string; role: string; status: string }>;
   documents: Array<{ id: string; name: string; category: string; status: string; document_year: number; document_month: number; amount: string | null; currency: string; issued_at: string | null; mime_type: string; file_size: number; structured_data: { analysis?: WorkspaceDocument["analysis"]; manual_override?: Record<string, unknown> }; company_name: string; created_at: string; issued_invoice_id: string | null; issued_invoice_status: string | null; issued_invoice_error: string | null }>;
-  payments: Array<{ id: string; tax_type: string; period_label: string; amount: string; currency: string; due_date: string; status: string; company_name: string; created_at: string }>;
+  payments: Array<{ id: string; tax_type: string; period_label: string; amount: string; currency: string; due_date: string; status: string; company_name: string; recipient_name: string | null; bank_account_number: string | null; transfer_title: string | null; created_at: string }>;
   stats: { clients_count: number; documents_count: number; payments_due_count: number; payments_due_total: string };
 };
 
@@ -92,8 +113,8 @@ const baseDocuments: WorkspaceDocument[] = [
   { id: 7, name: "Wyciąg bankowy za czerwiec", meta: "CSV 116 KB, dodano 2 lipca", status: "Przetworzone", type: "CSV", year: 2026, month: "Czerwiec", category: "Bank", pages: 5 },
 ];
 
-const formatMoney = (amount: number) =>
-  new Intl.NumberFormat("pl-PL", { style: "currency", currency: "PLN" }).format(amount);
+const formatMoney = (amount: number, currency = "PLN") =>
+  new Intl.NumberFormat("pl-PL", { style: "currency", currency }).format(amount);
 
 function formatDocumentMoney(amount: string, currency: string) {
   return new Intl.NumberFormat("pl-PL", { style: "currency", currency }).format(Number(amount));
@@ -153,6 +174,7 @@ export function ClientPortal({ mode }: { mode: PortalMode }) {
   const [paymentMethod, setPaymentMethod] = useState("blik");
   const [paying, setPaying] = useState(false);
   const [paymentSuccess, setPaymentSuccess] = useState(false);
+  const [paymentDataCopied, setPaymentDataCopied] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [seenNotificationIds, setSeenNotificationIds] = useState<{ payments: string[]; documents: string[] }>(() => {
     if (typeof window === "undefined") return { payments: [], documents: [] };
@@ -192,7 +214,12 @@ export function ClientPortal({ mode }: { mode: PortalMode }) {
       period: payment.period_label,
       amount: Number(payment.amount),
       due: formatDate(payment.due_date),
-      status: payment.status === "paid" ? "paid" : payment.status === "scheduled" ? "scheduled" : "due",
+      status: isPaymentStatus(payment.status) ? payment.status : "due",
+      currency: payment.currency,
+      companyName: payment.company_name,
+      recipientName: payment.recipient_name,
+      bankAccountNumber: payment.bank_account_number,
+      transferTitle: payment.transfer_title,
     })));
     setDocuments(overviewPayload.documents.map((document) => ({
       id: document.id,
@@ -245,7 +272,7 @@ export function ClientPortal({ mode }: { mode: PortalMode }) {
     return () => window.clearInterval(timer);
   }, [loadProductionData, overview?.documents, production]);
 
-  const duePayments = payments.filter((payment) => payment.status !== "paid");
+  const duePayments = payments.filter((payment) => payablePaymentStatuses.includes(payment.status));
   const nextPayment = duePayments[0];
   const platformOperator = isPlatformStaff(session?.platformRole);
   const canAccessOffice = platformOperator || ["owner", "admin", "accountant"].includes(session?.membershipRole || "");
@@ -289,7 +316,24 @@ export function ClientPortal({ mode }: { mode: PortalMode }) {
 
   function openPayment(payment: Payment) {
     setPaymentSuccess(false);
+    setPaymentDataCopied(false);
     setModalPayment(payment);
+  }
+
+  async function copyPaymentData() {
+    if (!modalPayment?.bankAccountNumber) return;
+    const lines = [
+      ...(modalPayment.recipientName ? [`Odbiorca: ${modalPayment.recipientName}`] : []),
+      `Rachunek: ${modalPayment.bankAccountNumber}`,
+      `Kwota: ${formatMoney(modalPayment.amount, modalPayment.currency)}`,
+      `Tytuł: ${modalPayment.transferTitle || `${modalPayment.type}, ${modalPayment.period}`}`,
+    ];
+    try {
+      await navigator.clipboard.writeText(lines.join("\n"));
+      setPaymentDataCopied(true);
+    } catch {
+      setPortalNotice("Przeglądarka zablokowała schowek. Skopiuj rachunek i tytuł ręcznie.");
+    }
   }
 
   function confirmPayment() {
@@ -309,6 +353,7 @@ export function ClientPortal({ mode }: { mode: PortalMode }) {
     setModalPayment(null);
     setPaymentSuccess(false);
     setPaying(false);
+    setPaymentDataCopied(false);
   }
 
   async function uploadDocument(event: ChangeEvent<HTMLInputElement>) {
@@ -491,7 +536,7 @@ export function ClientPortal({ mode }: { mode: PortalMode }) {
                     </div>
                     {nextPayment ? (
                       <>
-                        <div className="payment-hero-amount"><span>DO ZAPŁATY</span><strong>{formatMoney(nextPayment.amount)}</strong></div>
+                        <div className="payment-hero-amount"><span>DO ZAPŁATY</span><strong>{formatMoney(nextPayment.amount, nextPayment.currency)}</strong></div>
                         <button className="button button-primary pay-button" onClick={() => openPayment(nextPayment)}>{production ? "Szczegóły" : "Zapłać teraz"} <ArrowRight size={19} /></button>
                         <div className="deadline-pill"><CalendarDays size={23} /><span><strong>{production ? `${daysToDeadline} dni` : "14 dni"}</strong> do terminu</span></div>
                       </>
@@ -525,8 +570,8 @@ export function ClientPortal({ mode }: { mode: PortalMode }) {
                             <span className={`payment-type ${payment.type.toLowerCase()}`}>{payment.type}</span>
                             <div><strong>{payment.type}</strong><small>{payment.period}</small></div>
                             <div className="list-due"><small>Termin</small><strong>{payment.due.replace(" 2026", "")}</strong></div>
-                            <strong className="list-amount">{formatMoney(payment.amount)}</strong>
-                            {payment.status === "paid" ? <span className="paid-pill"><Check size={13} /> Opłacone</span> : <button className="small-pay" onClick={() => openPayment(payment)}>{production ? "Szczegóły" : "Zapłać"}</button>}
+                            <strong className="list-amount">{formatMoney(payment.amount, payment.currency)}</strong>
+                            {payment.status === "paid" ? <span className="paid-pill"><Check size={13} /> Opłacone</span> : payablePaymentStatuses.includes(payment.status) ? <button className="small-pay" onClick={() => openPayment(payment)}>{production ? "Szczegóły" : "Zapłać"}</button> : <span className="due-pill">{clientPaymentStatusLabels[payment.status]}</span>}
                           </div>
                         ))}
                         {payments.length === 0 ? <div className="portal-empty-row">Nie ma jeszcze żadnych płatności.</div> : null}
@@ -568,9 +613,9 @@ export function ClientPortal({ mode }: { mode: PortalMode }) {
                         <div key={payment.id}>
                           <span className={`payment-type ${payment.type.toLowerCase()}`}>{payment.type}</span>
                           <div><strong>{payment.type}, {payment.period}</strong><small>Termin {payment.due}</small></div>
-                          <strong>{formatMoney(payment.amount)}</strong>
-                          <span className={payment.status === "paid" ? "paid-pill" : payment.status === "scheduled" ? "scheduled-pill" : "due-pill"}>{payment.status === "paid" ? "Opłacone" : payment.status === "scheduled" ? "Zaplanowane" : "Do zapłaty"}</span>
-                          {payment.status !== "paid" && <button className="small-pay" onClick={() => openPayment(payment)}>{production ? "Szczegóły" : "Zapłać"} <ArrowRight size={14} /></button>}
+                          <strong>{formatMoney(payment.amount, payment.currency)}</strong>
+                          <span className={payment.status === "paid" ? "paid-pill" : payment.status === "scheduled" || payment.status === "processing" ? "scheduled-pill" : "due-pill"}>{clientPaymentStatusLabels[payment.status]}</span>
+                          {payablePaymentStatuses.includes(payment.status) && <button className="small-pay" onClick={() => openPayment(payment)}>{production ? "Szczegóły" : "Zapłać"} <ArrowRight size={14} /></button>}
                         </div>
                       ))}
                       {payments.length === 0 ? <div className="portal-empty-row">Nie ma jeszcze płatności do wyświetlenia.</div> : null}
@@ -621,14 +666,15 @@ export function ClientPortal({ mode }: { mode: PortalMode }) {
                 <>
                   <span className="modal-kicker">{production ? "SZCZEGÓŁY PŁATNOŚCI" : "PŁATNOŚĆ DEMONSTRACYJNA"}</span>
                   <h2>{modalPayment.type}, {modalPayment.period}</h2>
-                  <div className="modal-amount"><small>Kwota do zapłaty</small><strong>{formatMoney(modalPayment.amount)}</strong><span>Termin {modalPayment.due}</span></div>
+                  <div className="modal-amount"><small>Kwota do zapłaty</small><strong>{formatMoney(modalPayment.amount, modalPayment.currency)}</strong><span>Termin {modalPayment.due}</span></div>
                   {!production ? <fieldset>
                     <legend>Wybierz metodę</legend>
                     <label className={paymentMethod === "blik" ? "selected" : ""}><input type="radio" name="method" value="blik" checked={paymentMethod === "blik"} onChange={() => setPaymentMethod("blik")} /><b>BLIK</b><span>Kod 6-cyfrowy</span></label>
                     <label className={paymentMethod === "transfer" ? "selected" : ""}><input type="radio" name="method" value="transfer" checked={paymentMethod === "transfer"} onChange={() => setPaymentMethod("transfer")} /><b><Landmark size={18} /></b><span>Szybki przelew</span></label>
                   </fieldset> : null}
                   {!production && paymentMethod === "blik" && <label className="blik-field">Kod BLIK<input inputMode="numeric" maxLength={6} placeholder="Wpisz 6 cyfr" /></label>}
-                  <div className="demo-notice"><CircleHelp size={17} /> {production ? "Płatności online zostaną uruchomione po podłączeniu operatora płatności. System nie oznaczy zobowiązania jako opłacone bez potwierdzenia." : "To jest interaktywny prototyp. Kliknięcie nie uruchamia prawdziwej płatności."}</div>
+                  {production && modalPayment.bankAccountNumber ? <div className="bank-transfer-details">{modalPayment.recipientName ? <div><span>Odbiorca</span><strong>{modalPayment.recipientName}</strong></div> : null}<div><span>Rachunek odbiorcy</span><strong>{modalPayment.bankAccountNumber.replace(/(.{2})(.{4})(.{4})(.{4})(.{4})(.{4})(.{4})/, "$1 $2 $3 $4 $5 $6 $7")}</strong></div><div><span>Tytuł przelewu</span><strong>{modalPayment.transferTitle || `${modalPayment.type}, ${modalPayment.period}`}</strong></div><button className="button button-dark button-wide" type="button" onClick={() => void copyPaymentData()}><Copy size={17} /> {paymentDataCopied ? "Dane skopiowane" : "Kopiuj dane do przelewu"}</button></div> : null}
+                  <div className="demo-notice"><CircleHelp size={17} /> {production ? (modalPayment.bankAccountNumber ? "To zwykły przelew na rachunek odbiorcy. Epito nie pobiera prowizji ani danych logowania do banku; bank może naliczyć opłatę zgodnie z taryfą. Status nie zmieni się bez niezależnego potwierdzenia." : "Brakuje rachunku odbiorcy. Biuro musi uzupełnić dane płatności, zanim będzie można przygotować przelew.") : "To jest interaktywny prototyp. Kliknięcie nie uruchamia prawdziwej płatności."}</div>
                   {production ? <button className="button button-dark button-wide" onClick={closeModal}>Zamknij</button> : <button className="button button-primary button-wide modal-pay" onClick={confirmPayment} disabled={paying}>{paying ? "Przetwarzanie" : `Potwierdź ${formatMoney(modalPayment.amount)}`} <ArrowRight size={18} /></button>}
                 </>
               )}

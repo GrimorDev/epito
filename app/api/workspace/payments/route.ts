@@ -24,7 +24,11 @@ export async function POST(request: NextRequest) {
   const periodLabel = typeof body?.periodLabel === "string" ? body.periodLabel.trim() : "";
   const amount = typeof body?.amount === "string" || typeof body?.amount === "number" ? Number(body.amount) : Number.NaN;
   const dueDate = typeof body?.dueDate === "string" ? body.dueDate : "";
-  if (!clientCompanyId || !taxTypes.has(taxType) || periodLabel.length < 2 || periodLabel.length > 80 || !Number.isFinite(amount) || amount < 0 || amount > 999_999_999 || !/^\d{4}-\d{2}-\d{2}$/.test(dueDate)) {
+  const rawBankAccountNumber = typeof body?.bankAccountNumber === "string" ? body.bankAccountNumber.trim() : "";
+  const bankAccountNumber = rawBankAccountNumber.replace(/[\s-]/g, "");
+  const recipientName = typeof body?.recipientName === "string" ? body.recipientName.trim() : "";
+  const transferTitle = typeof body?.transferTitle === "string" ? body.transferTitle.trim() : "";
+  if (!clientCompanyId || !taxTypes.has(taxType) || periodLabel.length < 2 || periodLabel.length > 80 || !Number.isFinite(amount) || amount < 0 || amount > 999_999_999 || !/^\d{4}-\d{2}-\d{2}$/.test(dueDate) || (bankAccountNumber && (!/^\d{26}$/.test(bankAccountNumber) || recipientName.length < 2)) || recipientName.length > 180 || transferTitle.length > 140) {
     return NextResponse.json({ error: "Uzupełnij prawidłowe dane płatności." }, { status: 400 });
   }
 
@@ -33,8 +37,8 @@ export async function POST(request: NextRequest) {
       const company = await client.query("select id from client_companies where id = $1 and deleted_at is null", [clientCompanyId]);
       if (!company.rowCount) return null;
       const result = await client.query<{ id: string }>(
-        "insert into payments (tenant_id, client_company_id, tax_type, period_label, amount, due_date, status) values ($1, $2, $3, $4, $5, $6, 'due') returning id",
-        [session.tenantId, clientCompanyId, taxType, periodLabel, amount, dueDate],
+        "insert into payments (tenant_id, client_company_id, tax_type, period_label, amount, due_date, status, metadata) values ($1, $2, $3, $4, $5, $6, 'due', $7::jsonb) returning id",
+        [session.tenantId, clientCompanyId, taxType, periodLabel, amount, dueDate, JSON.stringify({ ...(recipientName ? { recipient_name: recipientName } : {}), ...(bankAccountNumber ? { bank_account_number: bankAccountNumber } : {}), ...(transferTitle ? { transfer_title: transferTitle } : {}) })],
       );
       await client.query(
         "insert into audit_log (tenant_id, actor_user_id, action, entity_type, entity_id, after_data) values ($1, $2, 'payment.created', 'payment', $3, jsonb_build_object('tax_type', $4::text, 'amount', $5::numeric))",

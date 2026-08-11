@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import {
   ArrowLeft,
+  Ban,
   Building2,
   FileText,
   LayoutDashboard,
@@ -37,8 +38,8 @@ type Overview = {
   tenant: { id: string; slug: string; display_name: string; legal_name: string; nip: string | null };
   companies: Array<{ id: string; name: string; nip: string | null; email: string | null; phone: string | null; status: string; created_at: string; documents_count: number; payments_count: number }>;
   team: Array<{ id: string; email: string; full_name: string; role: string; status: string }>;
-  documents: Array<{ id: string; name: string; category: string; status: string; document_year: number; document_month: number; amount: string | null; currency: string; company_name: string; created_at: string; issued_invoice_id: string | null; issued_invoice_status: string | null; issued_invoice_error: string | null }>;
-  payments: Array<{ id: string; tax_type: string; period_label: string; amount: string; currency: string; due_date: string; status: string; company_name: string; created_at: string }>;
+  documents: Array<{ id: string; name: string; category: string; status: string; document_year: number; document_month: number; amount: string | null; currency: string; company_name: string; created_at: string; issued_invoice_id: string | null; issued_invoice_number: string | null; issued_invoice_status: string | null; issued_invoice_error: string | null; issued_invoice_created_at: string | null; issued_invoice_updated_at: string | null; issued_invoice_environment: string | null; issued_invoice_reference: string | null; ksef_number: string | null }>;
+  payments: Array<{ id: string; tax_type: string; period_label: string; amount: string; currency: string; due_date: string; status: string; company_name: string; recipient_name: string | null; bank_account_number: string | null; transfer_title: string | null; created_at: string }>;
   stats: { clients_count: number; documents_count: number; payments_due_count: number; payments_due_total: string };
   ksefConnections: Array<{ id: string; client_company_id: string; client_company_name: string; environment: string; nip: string; status: string; last_synced_at: string | null; last_error: string | null; created_at: string }>;
 };
@@ -82,6 +83,41 @@ const paymentTypeLabel: Record<string, string> = {
   zus: "ZUS",
   invoice: "Faktura",
   other: "Inna płatność",
+};
+
+const documentCategoryLabel: Record<string, string> = {
+  sales: "Sprzedaż",
+  costs: "Koszty",
+  bank: "Bank",
+  contracts: "Umowy",
+  tax: "Podatki",
+  other: "Inne",
+};
+
+const documentStatusLabel: Record<string, string> = {
+  uploaded: "W kolejce",
+  processing: "Analiza trwa",
+  verified: "Odczytano",
+  requires_action: "Sprawdź dane",
+  archived: "Archiwalny",
+};
+
+const paymentStatusLabel: Record<string, string> = {
+  draft: "Szkic",
+  due: "Do zapłaty",
+  scheduled: "Zaplanowana",
+  processing: "Przetwarzana",
+  paid: "Opłacona",
+  failed: "Błąd płatności",
+  cancelled: "Anulowana",
+};
+
+const accountStatusLabel: Record<string, string> = {
+  active: "Aktywny",
+  invited: "Zaproszony",
+  disabled: "Zablokowany",
+  suspended: "Zawieszony",
+  archived: "Archiwalny",
 };
 
 export default function WorkspacePage() {
@@ -340,7 +376,7 @@ export function OfficeWorkspacePage() {
                 <div className={styles.twoColumns}>
                   <section className={styles.panel}>
                     <header className={styles.panelHeader}><div><h2>Użytkownicy organizacji</h2><p>Role decydują o zakresie dostępu do danych i operacji.</p></div></header>
-                    {data.team.length ? <div className={styles.tableWrap}><table className={styles.table}><thead><tr><th>Użytkownik</th><th>Rola</th><th>Status</th></tr></thead><tbody>{data.team.map((member) => <tr key={member.id}><td><strong>{member.full_name}</strong><small>{member.email}</small></td><td>{roleLabel[member.role] || member.role}</td><td><span className={styles.status}>{member.status === "active" ? "Aktywny" : member.status}</span></td></tr>)}</tbody></table></div> : <Empty title="Brak użytkowników" text="Dodaj pierwszą osobę do zespołu." />}
+                    {data.team.length ? <div className={styles.tableWrap}><table className={styles.table}><thead><tr><th>Użytkownik</th><th>Rola</th><th>Status</th></tr></thead><tbody>{data.team.map((member) => <tr key={member.id}><td><strong>{member.full_name}</strong><small>{member.email}</small></td><td>{roleLabel[member.role] || "Inna rola"}</td><td><span className={styles.status}>{accountStatusLabel[member.status] || "Nieznany"}</span></td></tr>)}</tbody></table></div> : <Empty title="Brak użytkowników" text="Dodaj pierwszą osobę do zespołu." />}
                   </section>
                   {canManageTeam ? (
                     <section className={`${styles.panel} ${styles.formPanel}`}>
@@ -398,6 +434,9 @@ export function OfficeWorkspacePage() {
                         <div className={styles.field}><label htmlFor="periodLabel">Okres</label><input id="periodLabel" name="periodLabel" required maxLength={80} placeholder="np. lipiec 2026" /></div>
                         <div className={styles.field}><label htmlFor="amount">Kwota</label><input id="amount" name="amount" required type="number" min="0.01" step="0.01" inputMode="decimal" /></div>
                         <div className={styles.field}><label htmlFor="dueDate">Termin płatności</label><input id="dueDate" name="dueDate" required type="date" /></div>
+                        <div className={styles.field}><label htmlFor="recipientName">Nazwa odbiorcy</label><input id="recipientName" name="recipientName" maxLength={180} placeholder="np. Urząd Skarbowy lub nazwa sprzedawcy" /></div>
+                        <div className={styles.field}><label htmlFor="bankAccountNumber">Rachunek do przelewu</label><input id="bankAccountNumber" name="bankAccountNumber" inputMode="numeric" maxLength={34} placeholder="26 cyfr, opcjonalnie" /><small>Klient zobaczy gotowe dane do zwykłego przelewu. Epito nie pośredniczy w przepływie środków.</small></div>
+                        <div className={styles.field}><label htmlFor="transferTitle">Tytuł przelewu</label><input id="transferTitle" name="transferTitle" maxLength={140} placeholder="np. VAT 07/2026, NIP 1234567890" /></div>
                         <FormMessage message={paymentMessage} />
                         {!data.companies.length ? <div className={styles.error}>Najpierw dodaj klienta biura.</div> : null}
                         <button className={styles.buttonPrimary} type="submit" disabled={paymentPending || !data.companies.length}>{paymentPending ? "Dodaję płatność…" : "Dodaj płatność"}</button>
@@ -566,7 +605,7 @@ function CompaniesTable({
                 <td>{company.email || company.phone || "Nie podano"}</td>
                 <td>{company.documents_count}</td>
                 <td>{company.payments_count}</td>
-                <td><span className={styles.status}>{company.status === "active" ? "Aktywny" : company.status}</span></td>
+                <td><span className={styles.status}>{accountStatusLabel[company.status] || "Nieznany"}</span></td>
                 {editable ? (
                   <td><div className={styles.rowActions}>
                     <button type="button" onClick={() => beginEdit(company)} aria-label={`Edytuj ${company.name}`} title="Edytuj klienta"><Pencil size={17} /></button>
@@ -585,7 +624,23 @@ function CompaniesTable({
 
 function DocumentsTable({ documents, onChanged }: { documents: Overview["documents"]; onChanged?: () => Promise<void> | void }) {
   const [retryingId, setRetryingId] = useState<string | null>(null);
+  const [cancellingId, setCancellingId] = useState<string | null>(null);
+  const [selectedDocument, setSelectedDocument] = useState<Overview["documents"][number] | null>(null);
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (!selectedDocument) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") setSelectedDocument(null);
+    }
+    window.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [selectedDocument]);
 
   async function retryInvoice(invoiceId: string) {
     setRetryingId(invoiceId);
@@ -594,11 +649,28 @@ function DocumentsTable({ documents, onChanged }: { documents: Overview["documen
       const response = await fetch(`/api/workspace/invoices/${invoiceId}/retry`, { method: "POST" });
       const payload = (await response.json()) as { error?: string };
       if (!response.ok) throw new Error(payload.error || "Nie udało się ponowić wysyłki.");
+      setSelectedDocument(null);
       await onChanged?.();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Nie udało się ponowić wysyłki.");
     } finally {
       setRetryingId(null);
+    }
+  }
+
+  async function cancelInvoice(invoiceId: string) {
+    setCancellingId(invoiceId);
+    setError("");
+    try {
+      const response = await fetch(`/api/workspace/invoices/${invoiceId}/cancel`, { method: "POST" });
+      const payload = (await response.json()) as { error?: string };
+      if (!response.ok) throw new Error(payload.error || "Nie udało się anulować obsługi wysyłki.");
+      setSelectedDocument(null);
+      await onChanged?.();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Nie udało się anulować obsługi wysyłki.");
+    } finally {
+      setCancellingId(null);
     }
   }
 
@@ -613,19 +685,14 @@ function DocumentsTable({ documents, onChanged }: { documents: Overview["documen
               <td><strong>{document.name}</strong><small>Dodano {new Date(document.created_at).toLocaleDateString("pl-PL")}</small></td>
               <td>{document.company_name}</td>
               <td>{String(document.document_month).padStart(2, "0")}.{document.document_year}</td>
-              <td>{document.category}</td>
+              <td>{documentCategoryLabel[document.category] || "Inne"}</td>
               <td>{document.amount ? formatMoney(document.amount, document.currency) : "—"}</td>
-              <td><span className={styles.status}>{document.status}</span></td>
+              <td><span className={styles.status}>{documentStatusLabel[document.status] || "Nieznany"}</span></td>
               <td>
                 {document.issued_invoice_status ? (
                   <div className={styles.ksefCell}>
-                    <span className={`${styles.status} ${document.issued_invoice_status === "accepted" ? styles.ksefAccepted : document.issued_invoice_status === "failed" || document.issued_invoice_status === "rejected" ? styles.ksefError : styles.ksefPending}`}>{issuedInvoiceStatusLabels[document.issued_invoice_status] || document.issued_invoice_status}</span>
-                    {document.issued_invoice_error ? <small title={document.issued_invoice_error}>{document.issued_invoice_error}</small> : null}
-                    {(document.issued_invoice_status === "failed" || document.issued_invoice_status === "rejected") && document.issued_invoice_id ? (
-                      <button className={styles.ksefRetry} type="button" disabled={retryingId === document.issued_invoice_id} onClick={() => void retryInvoice(document.issued_invoice_id!)}>
-                        {retryingId === document.issued_invoice_id ? "Wysyłam…" : "Wyślij ponownie"}
-                      </button>
-                    ) : null}
+                    <span className={`${styles.status} ${document.issued_invoice_status === "accepted" ? styles.ksefAccepted : document.issued_invoice_status === "failed" || document.issued_invoice_status === "rejected" ? styles.ksefError : document.issued_invoice_status === "cancelled" ? styles.ksefCancelled : styles.ksefPending}`}>{issuedInvoiceStatusLabels[document.issued_invoice_status] || "Nieznany status"}</span>
+                    <button className={styles.ksefDetailsButton} type="button" onClick={() => setSelectedDocument(document)}>Szczegóły</button>
                   </div>
                 ) : "—"}
               </td>
@@ -633,12 +700,42 @@ function DocumentsTable({ documents, onChanged }: { documents: Overview["documen
           ))}
         </tbody>
       </table>
+      {selectedDocument?.issued_invoice_status ? (
+        <div className={styles.backdrop} role="dialog" aria-modal="true" aria-labelledby="ksef-details-title" onMouseDown={(event) => { if (event.currentTarget === event.target) setSelectedDocument(null); }}>
+          <section className={`${styles.modal} ${styles.ksefDetailsModal}`}>
+            <header className={styles.modalHeader}>
+              <div><span className={styles.modalEyebrow}>STATUS WYSYŁKI DO KSeF</span><h2 id="ksef-details-title">{selectedDocument.issued_invoice_number || selectedDocument.name}</h2><p>{selectedDocument.company_name}</p></div>
+              <button className={`${styles.buttonGhost} ${styles.iconButton}`} type="button" onClick={() => setSelectedDocument(null)} aria-label="Zamknij szczegóły" autoFocus><X size={20} /></button>
+            </header>
+            <div className={styles.ksefDetailsSummary}>
+              <span className={`${styles.status} ${selectedDocument.issued_invoice_status === "accepted" ? styles.ksefAccepted : selectedDocument.issued_invoice_status === "failed" || selectedDocument.issued_invoice_status === "rejected" ? styles.ksefError : selectedDocument.issued_invoice_status === "cancelled" ? styles.ksefCancelled : styles.ksefPending}`}>{issuedInvoiceStatusLabels[selectedDocument.issued_invoice_status] || "Nieznany status"}</span>
+              <strong>{selectedDocument.amount ? formatMoney(selectedDocument.amount, selectedDocument.currency) : "Kwota nieustalona"}</strong>
+            </div>
+            <dl className={styles.ksefDetailsGrid}>
+              <div><dt>Dokument</dt><dd>{selectedDocument.name}</dd></div>
+              <div><dt>Okres</dt><dd>{String(selectedDocument.document_month).padStart(2, "0")}.{selectedDocument.document_year}</dd></div>
+              <div><dt>Środowisko</dt><dd>{selectedDocument.issued_invoice_environment ? ksefEnvironmentLabel[selectedDocument.issued_invoice_environment] || selectedDocument.issued_invoice_environment : "Nie ustalono"}</dd></div>
+              <div><dt>Utworzono próbę</dt><dd>{selectedDocument.issued_invoice_created_at ? new Date(selectedDocument.issued_invoice_created_at).toLocaleString("pl-PL") : "Brak danych"}</dd></div>
+              <div><dt>Ostatnia aktualizacja</dt><dd>{selectedDocument.issued_invoice_updated_at ? new Date(selectedDocument.issued_invoice_updated_at).toLocaleString("pl-PL") : "Brak danych"}</dd></div>
+              {selectedDocument.ksef_number ? <div className={styles.fieldFull}><dt>Numer KSeF</dt><dd>{selectedDocument.ksef_number}</dd></div> : null}
+              {selectedDocument.issued_invoice_reference ? <div className={styles.fieldFull}><dt>Identyfikator wysyłki</dt><dd>{selectedDocument.issued_invoice_reference}</dd></div> : null}
+            </dl>
+            {selectedDocument.issued_invoice_error ? <div className={styles.ksefErrorContext}><strong>Pełny komunikat KSeF</strong><p>{selectedDocument.issued_invoice_error}</p></div> : <div className={styles.ksefInfoContext}><strong>Brak komunikatu błędu</strong><p>Wysyłka nie wymaga obecnie działania użytkownika.</p></div>}
+            <div className={styles.ksefSafetyNote}>Anulowanie jest dostępne tylko dla próby zakończonej błędem lub odrzuconej. Faktury przyjętej przez KSeF nie można usunąć; jej zmianę wykonuje się dokumentem korygującym.</div>
+            <footer className={styles.ksefModalActions}>
+              <button className={styles.buttonGhost} type="button" onClick={() => setSelectedDocument(null)}>Zamknij</button>
+              {(selectedDocument.issued_invoice_status === "failed" || selectedDocument.issued_invoice_status === "rejected") && selectedDocument.issued_invoice_id ? <button className={styles.buttonDanger} type="button" disabled={cancellingId === selectedDocument.issued_invoice_id} onClick={() => void cancelInvoice(selectedDocument.issued_invoice_id!)}><Ban size={17} /> {cancellingId === selectedDocument.issued_invoice_id ? "Anuluję…" : "Anuluj próbę"}</button> : null}
+              {(["failed", "rejected", "cancelled"].includes(selectedDocument.issued_invoice_status)) && selectedDocument.issued_invoice_id ? <button className={styles.buttonPrimary} type="button" disabled={retryingId === selectedDocument.issued_invoice_id} onClick={() => void retryInvoice(selectedDocument.issued_invoice_id!)}><RefreshCw size={17} /> {retryingId === selectedDocument.issued_invoice_id ? "Wysyłam…" : selectedDocument.issued_invoice_status === "cancelled" ? "Wznów wysyłkę" : "Wyślij ponownie"}</button> : null}
+            </footer>
+          </section>
+        </div>
+      ) : null}
     </div>
   );
 }
 
 function PaymentsTable({ payments }: { payments: Overview["payments"] }) {
-  return <div className={styles.tableWrap}><table className={styles.table}><thead><tr><th>Płatność</th><th>Klient</th><th>Okres</th><th>Termin</th><th>Kwota</th><th>Status</th></tr></thead><tbody>{payments.map((payment) => <tr key={payment.id}><td><strong>{paymentTypeLabel[payment.tax_type] || payment.tax_type}</strong></td><td>{payment.company_name}</td><td>{payment.period_label}</td><td>{new Date(`${payment.due_date}T00:00:00`).toLocaleDateString("pl-PL")}</td><td><strong>{formatMoney(payment.amount, payment.currency)}</strong></td><td><span className={styles.status}>{payment.status === "due" ? "Do zapłaty" : payment.status}</span></td></tr>)}</tbody></table></div>;
+  return <div className={styles.tableWrap}><table className={styles.table}><thead><tr><th>Płatność</th><th>Klient</th><th>Okres</th><th>Termin</th><th>Kwota</th><th>Status</th></tr></thead><tbody>{payments.map((payment) => <tr key={payment.id}><td><strong>{paymentTypeLabel[payment.tax_type] || "Inna płatność"}</strong></td><td>{payment.company_name}</td><td>{payment.period_label}</td><td>{new Date(`${payment.due_date}T00:00:00`).toLocaleDateString("pl-PL")}</td><td><strong>{formatMoney(payment.amount, payment.currency)}</strong></td><td><span className={styles.status}>{paymentStatusLabel[payment.status] || "Nieznany"}</span></td></tr>)}</tbody></table></div>;
 }
 
 function ConnectionsTable({
