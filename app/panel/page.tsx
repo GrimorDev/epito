@@ -245,6 +245,7 @@ export function ClientPortal({ mode }: { mode: PortalMode }) {
 
   const duePayments = payments.filter((payment) => payment.status !== "paid");
   const nextPayment = duePayments[0];
+  const canAccessOffice = session?.platformRole === "supervisor" || ["owner", "admin", "accountant"].includes(session?.membershipRole || "");
   const actionDocumentsList = documents.filter((document) => document.statusCode ? document.statusCode !== "verified" : document.status !== "Przetworzone");
   const newDuePayments = duePayments.filter((payment) => !seenNotificationIds.payments.includes(String(payment.id)));
   const newActionDocuments = actionDocumentsList.filter((document) => !seenNotificationIds.documents.includes(String(document.id)));
@@ -461,7 +462,7 @@ export function ClientPortal({ mode }: { mode: PortalMode }) {
                 <ChevronDown size={18} />
               </button>
               <AnimatePresence>
-                {profileOpen ? <motion.div className="profile-popover" initial={{ opacity: 0, y: 8, scale: .98 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 6, scale: .98 }}><div><strong>{userName}</strong><small>{session?.email || "konto demonstracyjne"}</small></div><button onClick={() => { setProfileOpen(false); selectSection("Ustawienia"); }}><Settings size={17} /> Ustawienia konta</button>{production ? <button onClick={logout}><ArrowLeft size={17} /> Wyloguj się</button> : <Link href="/"><ArrowLeft size={17} /> Strona główna</Link>}</motion.div> : null}
+                {profileOpen ? <motion.div className="profile-popover" initial={{ opacity: 0, y: 8, scale: .98 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 6, scale: .98 }}><div><strong>{userName}</strong><small>{session?.email || "konto demonstracyjne"}</small></div><button onClick={() => { setProfileOpen(false); selectSection("Ustawienia"); }}><Settings size={17} /> Ustawienia konta</button>{production && canAccessOffice ? <button onClick={() => { setProfileOpen(false); router.push("/office"); }}><Building2 size={17} /> Zaplecze biura</button> : null}{production ? <button onClick={logout}><ArrowLeft size={17} /> Wyloguj się</button> : <Link href="/"><ArrowLeft size={17} /> Strona główna</Link>}</motion.div> : null}
               </AnimatePresence>
             </div>
           </div>
@@ -548,7 +549,7 @@ export function ClientPortal({ mode }: { mode: PortalMode }) {
                   <section className="advisor-banner">
                     <div className="advisor-avatar">{production ? initials(companyName) : "AK"}</div>
                     <div><small>{production ? "TWOJA ORGANIZACJA" : "TWÓJ OPIEKUN"}</small><h3>{production ? companyName : "Anna Kowalska"} <span className="availability">Aktywna</span></h3><p>{production ? legalName : "Poniedziałek do piątku, od 8:00 do 16:00."}</p></div>
-                    <button onClick={() => production ? router.push("/office") : selectSection("Wiadomości")}><MessageSquareText size={17} /> {production ? "Zarządzaj danymi" : "Napisz wiadomość"}</button>
+                    <button onClick={() => production ? (canAccessOffice ? router.push("/office") : selectSection("Ustawienia")) : selectSection("Wiadomości")}><MessageSquareText size={17} /> {production ? (canAccessOffice ? "Zarządzaj danymi" : "Ustawienia organizacji") : "Napisz wiadomość"}</button>
                     <div className="advisor-phone"><small>{production ? "NIP" : "TELEFON"}</small><strong>{production ? null : <Phone size={14} />} {production ? overview?.tenant.nip || "Nie podano" : "+48 22 123 45 67"}</strong></div>
                   </section>
                 </>
