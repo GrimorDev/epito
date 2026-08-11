@@ -17,9 +17,10 @@ function canIssue(role: string | null, platformRole: string) {
 // — no new invoice is created, matching KSeF's own duplicate rule (seller
 // NIP + RodzajFaktury + invoice number must stay unique). Only meaningful
 // for "failed" (our own transient error — network, auth, a bug since fixed)
-// or "rejected" (KSeF's definitive answer, but the underlying cause — e.g.
+// "rejected" (KSeF's definitive answer, but the underlying cause — e.g.
 // a since-corrected NIP mismatch — may no longer apply) invoices; "queued"/
 // "submitted" are already in flight, and "accepted" is KSeF's final word.
+// A locally "cancelled" attempt can also be resumed with the exact stored XML.
 export async function POST(request: NextRequest, context: Context) {
   if (!isSameOrigin(request)) return NextResponse.json({ error: "Nieprawidłowe źródło żądania." }, { status: 403 });
   const session = await getSession(request);
@@ -35,8 +36,8 @@ export async function POST(request: NextRequest, context: Context) {
     );
     const invoice = invoiceResult.rows[0];
     if (!invoice) return { error: "Nie znaleziono faktury.", code: 404 } as const;
-    if (invoice.status !== "failed" && invoice.status !== "rejected") {
-      return { error: "Tę fakturę można ponowić tylko po błędzie wysyłki lub odrzuceniu.", code: 400 } as const;
+    if (invoice.status !== "failed" && invoice.status !== "rejected" && invoice.status !== "cancelled") {
+      return { error: "Tę fakturę można ponowić tylko po błędzie, odrzuceniu lub anulowaniu lokalnej próby.", code: 400 } as const;
     }
 
     await client.query(

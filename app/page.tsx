@@ -39,7 +39,7 @@ const faqs = [
   ],
   [
     "Czy płatności w demonstracji są prawdziwe?",
-    "Nie. Udostępniony panel jest bezpieczną makietą produktu. Prawdziwe płatności i automatyczne potwierdzenia zostaną uruchomione dopiero po integracji z licencjonowanym operatorem płatności.",
+    "Nie. Demo nie obciąża rachunku. W panelu produkcyjnym Epito może przygotować dane do zwykłego przelewu, a płatności BLIK i automatyczne potwierdzenia uruchomimy dopiero przez licencjonowanego operatora.",
   ],
   [
     "Czy portal może działać pod marką mojego biura?",
@@ -170,7 +170,7 @@ export default function Home() {
 
       <motion.section className="trust-strip" aria-label="Planowane integracje" {...reveal}>
         <span>Przygotowany na integracje z</span>
-        <div><b>KSeF</b><b>Comarch</b><b>Insert</b><b>Symfonia</b><b>mBank</b></div>
+        <div><b>KSeF</b><b>Comarch</b><b>Insert</b><b>Symfonia</b><b>MT940 / CAMT.053</b></div>
       </motion.section>
 
       <section className="problem-section" id="jak-dziala">

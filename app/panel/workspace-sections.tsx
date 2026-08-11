@@ -69,6 +69,7 @@ export const issuedInvoiceStatusLabels: Record<string, string> = {
   accepted: "Zaakceptowana przez KSeF",
   rejected: "Odrzucona przez KSeF",
   failed: "Błąd wysyłki",
+  cancelled: "Anulowana lokalnie",
 };
 
 const issuedInvoiceCompactLabels: Record<string, string> = {
@@ -77,11 +78,13 @@ const issuedInvoiceCompactLabels: Record<string, string> = {
   accepted: "Zaakceptowana",
   rejected: "Odrzucona",
   failed: "Błąd wysyłki",
+  cancelled: "Anulowana",
 };
 
 function issuedInvoiceTone(status?: string | null) {
   if (status === "accepted") return "accepted";
   if (status === "failed" || status === "rejected") return "error";
+  if (status === "cancelled") return "neutral";
   if (status === "queued" || status === "submitted") return "pending";
   return "neutral";
 }

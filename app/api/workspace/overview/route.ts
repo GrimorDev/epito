@@ -58,15 +58,25 @@ export async function GET(request: NextRequest) {
         company_name: string;
         created_at: string;
         issued_invoice_id: string | null;
+        issued_invoice_number: string | null;
         issued_invoice_status: string | null;
         issued_invoice_error: string | null;
+        issued_invoice_created_at: string | null;
+        issued_invoice_updated_at: string | null;
+        issued_invoice_environment: string | null;
+        issued_invoice_reference: string | null;
+        ksef_number: string | null;
       }>(`
         select document.id, document.name, document.category, document.status,
           document.document_year, document.document_month, document.amount::text,
           document.currency, document.issued_at::text, document.mime_type, document.file_size,
           document.structured_data, company.name as company_name, document.created_at,
-          invoice.id as issued_invoice_id, invoice.status as issued_invoice_status,
-          invoice.error_message as issued_invoice_error
+          invoice.id as issued_invoice_id, invoice.invoice_number as issued_invoice_number,
+          invoice.status as issued_invoice_status, invoice.error_message as issued_invoice_error,
+          invoice.created_at as issued_invoice_created_at, invoice.updated_at as issued_invoice_updated_at,
+          invoice.ksef_environment as issued_invoice_environment,
+          invoice.ksef_invoice_reference as issued_invoice_reference,
+          invoice.ksef_number
         from documents document
         join client_companies company on company.id = document.client_company_id
         left join issued_invoices invoice on invoice.document_id = document.id
@@ -83,16 +93,24 @@ export async function GET(request: NextRequest) {
         due_date: string;
         status: string;
         company_name: string;
+        recipient_name: string | null;
+        bank_account_number: string | null;
+        transfer_title: string | null;
         created_at: string;
         payment_reference: string | null;
         payment_source: string | null;
       }>(`
         select payment.id, payment.tax_type, payment.period_label, payment.amount::text,
           payment.currency, payment.due_date::text, payment.status,
-          company.name as company_name, payment.created_at,
+          company.name as company_name,
+          coalesce(payment.metadata->>'recipient_name', case when payment.tax_type = 'invoice' then company.name end) as recipient_name,
+          coalesce(invoice.bank_account_number, payment.metadata->>'bank_account_number') as bank_account_number,
+          coalesce(payment.payment_reference, payment.metadata->>'transfer_title', payment.metadata->>'invoice_number') as transfer_title,
+          payment.created_at,
           payment.payment_reference, payment.metadata->>'source' as payment_source
         from payments payment
         join client_companies company on company.id = payment.client_company_id
+        left join issued_invoices invoice on invoice.document_id = payment.document_id
         order by payment.due_date asc, payment.created_at desc
         limit 250
       `),

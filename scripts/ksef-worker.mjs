@@ -396,14 +396,15 @@ async function handleInvoiceIssue(job) {
   // "failed" is not terminal here — it only means a previous attempt threw
   // (network blip, KSeF hiccup) and BullMQ is retrying; "accepted"/"rejected"
   // are KSeF's own final answers and must never be reprocessed.
-  if (invoiceRow.status === "accepted" || invoiceRow.status === "rejected") return;
+  if (invoiceRow.status === "accepted" || invoiceRow.status === "rejected" || invoiceRow.status === "cancelled") return;
 
   async function markFailed(message) {
     await withTenant(tenantId, actorUserId, async (client) => {
-      await client.query(
-        "update issued_invoices set status = 'failed', error_message = $1, updated_at = now() where id = $2",
+      const updated = await client.query(
+        "update issued_invoices set status = 'failed', error_message = $1, updated_at = now() where id = $2 and status <> 'cancelled'",
         [message.slice(0, 500), invoiceId],
       );
+      if (!updated.rowCount) return;
       await client.query(
         "insert into audit_log (tenant_id, actor_user_id, action, entity_type, entity_id, after_data) values ($1, $2, 'invoice.issue_failed', 'issued_invoice', $3, jsonb_build_object('error', $4::text))",
         [tenantId, actorUserId, invoiceId, message.slice(0, 500)],

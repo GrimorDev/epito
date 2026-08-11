@@ -218,7 +218,7 @@
 .buttonGhost { background: var(--secure-surface); color: var(--secure-ink); border-color: var(--secure-border); }
 .buttonDanger { color: var(--secure-danger); background: transparent; border-color: var(--secure-border); }
 .iconButton { width: 48px; padding: 0; }
-.buttonPrimary:disabled, .buttonSecondary:disabled { opacity: 0.55; cursor: wait; transform: none; }
+.buttonPrimary:disabled, .buttonSecondary:disabled, .buttonGhost:disabled, .buttonDanger:disabled { opacity: 0.55; cursor: wait; transform: none; }
 
 .statsGrid {
   display: grid;
@@ -423,6 +423,19 @@
 .ksefAccepted { background: #e7f6e9; color: #236b3c; }
 .ksefPending { background: #fff3d9; color: #8a5a11; }
 .ksefError { background: #fff0ef; color: #a52e2e; }
+.ksefCancelled { background: #edf0ef; color: #596965; }
+.ksefDetailsButton {
+  min-height: 36px;
+  padding: 0 12px;
+  border: 1px solid var(--secure-border);
+  border-radius: 9px;
+  background: var(--secure-surface);
+  color: var(--secure-ink);
+  font-size: 13px;
+  font-weight: 730;
+  cursor: pointer;
+}
+.ksefDetailsButton:hover { border-color: var(--secure-accent-strong); }
 .ksefRetry {
   min-height: 36px;
   padding: 0 11px;
@@ -439,6 +452,7 @@
 .shell[data-theme="dark"] .ksefAccepted { background: #19382a; color: #94d8a7; }
 .shell[data-theme="dark"] .ksefPending { background: #3d311b; color: #f1ca7d; }
 .shell[data-theme="dark"] .ksefError { background: #3d2422; color: #efaaa5; }
+.shell[data-theme="dark"] .ksefCancelled { background: #22302e; color: #b1bfbb; }
 .shell[data-theme="dark"] .ksefRetry { border-color: #704541; color: #efaaa5; }
 .shell[data-theme="dark"] .ksefRetry:hover { background: #362321; }
 .shell[data-theme="dark"] .rowActions .dangerIcon:hover { border-color: #704541; background: #362321; color: #efaaa5; }
@@ -446,6 +460,58 @@
 .shell[data-theme="dark"] .portalSuccess > span small { color: #98c886; }
 .shell[data-theme="dark"] .portalSuccess a { color: #c9efb6; }
 .shell[data-theme="dark"] .portalSuccess button { background: #10211e; color: #c9efb6; border-color: #315840; }
+
+.ksefDetailsModal { width: min(100%, 780px); }
+.modalEyebrow {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--secure-muted);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: .09em;
+}
+.ksefDetailsSummary {
+  min-height: 72px;
+  padding: 16px 18px;
+  border: 1px solid var(--secure-border);
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  background: var(--secure-bg);
+}
+.ksefDetailsSummary > strong { font-size: 23px; letter-spacing: -.025em; }
+.ksefDetailsGrid {
+  margin: 18px 0 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  overflow: hidden;
+  border: 1px solid var(--secure-border);
+  border-radius: 14px;
+  background: var(--secure-border);
+}
+.ksefDetailsGrid > div { min-width: 0; padding: 15px 17px; background: var(--secure-surface); }
+.ksefDetailsGrid dt { color: var(--secure-muted); font-size: 12px; }
+.ksefDetailsGrid dd { margin: 6px 0 0; overflow-wrap: anywhere; font-size: 15px; font-weight: 700; line-height: 1.45; }
+.ksefErrorContext,
+.ksefInfoContext {
+  margin-top: 18px;
+  padding: 17px 18px;
+  border: 1px solid #e5b9b5;
+  border-radius: 14px;
+  background: #fff6f5;
+  color: #762d29;
+}
+.ksefInfoContext { border-color: var(--secure-border); background: var(--secure-soft); color: var(--secure-ink); }
+.ksefErrorContext strong,
+.ksefInfoContext strong { font-size: 14px; }
+.ksefErrorContext p,
+.ksefInfoContext p { margin: 8px 0 0; overflow-wrap: anywhere; white-space: pre-wrap; font-size: 14px; line-height: 1.65; }
+.ksefSafetyNote { margin-top: 15px; color: var(--secure-muted); font-size: 13px; line-height: 1.55; }
+.ksefModalActions { margin-top: 24px; display: flex; justify-content: flex-end; gap: 10px; flex-wrap: wrap; }
+.shell[data-theme="dark"] .ksefErrorContext { border-color: #704541; background: #362321; color: #efb5b0; }
 
 .readOnlyNotice {
   padding: 16px;
@@ -516,6 +582,11 @@
   .portalSuccess button:nth-last-child(2) { width: 100%; }
   .inlineEditGrid { grid-template-columns: 1fr; }
   .inlineEditGrid .iconAction { width: 100%; }
+  .ksefDetailsSummary { align-items: flex-start; flex-direction: column; }
+  .ksefDetailsGrid { grid-template-columns: 1fr; }
+  .ksefDetailsGrid .fieldFull { grid-column: 1; }
+  .ksefModalActions { display: grid; }
+  .ksefModalActions button { width: 100%; }
 }
 
 @media (prefers-reduced-motion: reduce) {
