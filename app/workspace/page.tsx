@@ -550,13 +550,13 @@ function CompaniesTable({
             editingId === company.id ? (
               <tr key={company.id}>
                 <td colSpan={editable ? 6 : 5}>
-                  <div className={styles.singleForm} style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr) auto auto", gap: 8, alignItems: "center" }}>
+                  <div className={styles.inlineEditGrid}>
                     <input value={draftName} onChange={(event) => setDraftName(event.target.value)} placeholder="Nazwa firmy" maxLength={180} />
                     <input value={draftNip} onChange={(event) => setDraftNip(event.target.value)} placeholder="NIP" inputMode="numeric" maxLength={10} />
                     <input value={draftEmail} onChange={(event) => setDraftEmail(event.target.value)} placeholder="E-mail" type="email" maxLength={254} />
                     <input value={draftPhone} onChange={(event) => setDraftPhone(event.target.value)} placeholder="Telefon" type="tel" maxLength={40} />
                     <button className={styles.buttonPrimary} type="button" disabled={pending} onClick={() => void saveEdit(company.id)}>{pending ? "Zapisuję…" : "Zapisz"}</button>
-                    <button type="button" disabled={pending} onClick={() => setEditingId(null)} aria-label="Anuluj"><X size={16} /></button>
+                    <button className={styles.iconAction} type="button" disabled={pending} onClick={() => setEditingId(null)} aria-label="Anuluj"><X size={18} /></button>
                   </div>
                 </td>
               </tr>
@@ -568,9 +568,10 @@ function CompaniesTable({
                 <td>{company.payments_count}</td>
                 <td><span className={styles.status}>{company.status === "active" ? "Aktywny" : company.status}</span></td>
                 {editable ? (
-                  <td>
-                    <button type="button" onClick={() => beginEdit(company)} aria-label={`Edytuj ${company.name}`}><Pencil size={16} /></button>
-                    <button type="button" disabled={pending} onClick={() => void deleteClient(company.id, company.name)} aria-label={`Usuń ${company.name}`}><Trash2 size={16} /></button>
+                  <td><div className={styles.rowActions}>
+                    <button type="button" onClick={() => beginEdit(company)} aria-label={`Edytuj ${company.name}`} title="Edytuj klienta"><Pencil size={17} /></button>
+                    <button className={styles.dangerIcon} type="button" disabled={pending} onClick={() => void deleteClient(company.id, company.name)} aria-label={`Usuń ${company.name}`} title="Usuń klienta"><Trash2 size={17} /></button>
+                  </div>
                   </td>
                 ) : null}
               </tr>
@@ -617,15 +618,15 @@ function DocumentsTable({ documents, onChanged }: { documents: Overview["documen
               <td><span className={styles.status}>{document.status}</span></td>
               <td>
                 {document.issued_invoice_status ? (
-                  <>
-                    <span className={styles.status}>{issuedInvoiceStatusLabels[document.issued_invoice_status] || document.issued_invoice_status}</span>
+                  <div className={styles.ksefCell}>
+                    <span className={`${styles.status} ${document.issued_invoice_status === "accepted" ? styles.ksefAccepted : document.issued_invoice_status === "failed" || document.issued_invoice_status === "rejected" ? styles.ksefError : styles.ksefPending}`}>{issuedInvoiceStatusLabels[document.issued_invoice_status] || document.issued_invoice_status}</span>
                     {document.issued_invoice_error ? <small title={document.issued_invoice_error}>{document.issued_invoice_error}</small> : null}
                     {(document.issued_invoice_status === "failed" || document.issued_invoice_status === "rejected") && document.issued_invoice_id ? (
-                      <button className={styles.buttonPrimary} type="button" disabled={retryingId === document.issued_invoice_id} onClick={() => void retryInvoice(document.issued_invoice_id!)}>
+                      <button className={styles.ksefRetry} type="button" disabled={retryingId === document.issued_invoice_id} onClick={() => void retryInvoice(document.issued_invoice_id!)}>
                         {retryingId === document.issued_invoice_id ? "Wysyłam…" : "Wyślij ponownie"}
                       </button>
                     ) : null}
-                  </>
+                  </div>
                 ) : "—"}
               </td>
             </tr>

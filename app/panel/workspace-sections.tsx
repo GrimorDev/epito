@@ -71,6 +71,21 @@ export const issuedInvoiceStatusLabels: Record<string, string> = {
   failed: "Błąd wysyłki",
 };
 
+const issuedInvoiceCompactLabels: Record<string, string> = {
+  queued: "W kolejce",
+  submitted: "Wysłano",
+  accepted: "Zaakceptowana",
+  rejected: "Odrzucona",
+  failed: "Błąd wysyłki",
+};
+
+function issuedInvoiceTone(status?: string | null) {
+  if (status === "accepted") return "accepted";
+  if (status === "failed" || status === "rejected") return "error";
+  if (status === "queued" || status === "submitted") return "pending";
+  return "neutral";
+}
+
 type DocumentsProps = {
   documents: WorkspaceDocument[];
   setDocuments: Dispatch<SetStateAction<WorkspaceDocument[]>>;
@@ -201,6 +216,15 @@ export function DocumentsWorkspace({ documents, setDocuments, onUpload, onOpenIm
 
   async function retryInvoice(invoiceId: string) {
     setRetryingInvoiceId(invoiceId);
+    if (!production) {
+      setDocuments((current) => current.map((document) => document.issuedInvoiceId === invoiceId ? { ...document, issuedInvoiceStatus: "queued", issuedInvoiceError: null } : document));
+      window.setTimeout(() => {
+        setDocuments((current) => current.map((document) => document.issuedInvoiceId === invoiceId ? { ...document, issuedInvoiceStatus: "submitted" } : document));
+        setRetryingInvoiceId(null);
+        onNotice?.("Faktura demonstracyjna została ponownie wysłana do KSeF.");
+      }, 900);
+      return;
+    }
     try {
       const response = await fetch(`/api/workspace/invoices/${invoiceId}/retry`, { method: "POST" });
       const payload = (await response.json()) as { error?: string };
@@ -273,7 +297,7 @@ export function DocumentsWorkspace({ documents, setDocuments, onUpload, onOpenIm
             <label className="document-search"><Search size={17} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Szukaj dokumentu" /></label>
           </div>
 
-          <div className="document-column-head"><span>Nazwa</span><span>Folder</span><span>Status</span><span>Kwota</span><span /></div>
+          <div className="document-column-head"><span>Nazwa</span><span>Folder</span><span>Status</span><span>KSeF</span><span>Kwota</span><span /></div>
           <div className="expandable-documents">
             {filtered.map((document) => (
               <div className={previewId === document.id ? "document-row-group selected" : "document-row-group"} key={document.id}>
@@ -287,6 +311,22 @@ export function DocumentsWorkspace({ documents, setDocuments, onUpload, onOpenIm
                   </div>
                   <span className="document-category">{document.category}</span>
                   <span className={document.status === "Przetworzone" || document.status === "Odczytano" ? "doc-status done" : document.status === "Do uzupełnienia" || document.status === "Sprawdź dane" ? "doc-status missing" : "doc-status pending"}>{document.status}</span>
+                  <div className="document-ksef-cell">
+                    {document.issuedInvoiceStatus ? (
+                      <>
+                        <span className={`ksef-status ${issuedInvoiceTone(document.issuedInvoiceStatus)}`}>{issuedInvoiceCompactLabels[document.issuedInvoiceStatus] || document.issuedInvoiceStatus}</span>
+                        {(document.issuedInvoiceStatus === "failed" || document.issuedInvoiceStatus === "rejected") ? (
+                          <span className="ksef-row-error" title={document.issuedInvoiceError || "KSeF nie przyjął faktury."}>{document.issuedInvoiceError || "Sprawdź komunikat KSeF"}</span>
+                        ) : null}
+                        {(document.issuedInvoiceStatus === "failed" || document.issuedInvoiceStatus === "rejected") && document.issuedInvoiceId ? (
+                          <button className="ksef-retry-button" type="button" onClick={() => void retryInvoice(document.issuedInvoiceId!)} disabled={retryingInvoiceId === document.issuedInvoiceId} title="Wyślij fakturę ponownie do KSeF">
+                            <RefreshCw size={14} className={retryingInvoiceId === document.issuedInvoiceId ? "spinning" : ""} />
+                            <span>{retryingInvoiceId === document.issuedInvoiceId ? "Wysyłam" : "Ponów"}</span>
+                          </button>
+                        ) : null}
+                      </>
+                    ) : <span className="ksef-not-applicable">Nie dotyczy</span>}
+                  </div>
                   <strong className="document-amount">{document.amount ?? "Brak"}</strong>
                   {!production ? <button className="row-menu" aria-label="Więcej opcji"><MoreHorizontal size={20} /></button> : <span />}
                 </div>
