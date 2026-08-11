@@ -393,6 +393,10 @@ button { color: inherit; }
 .blik-field { display: grid; gap: 7px; font-size: 9px; font-weight: 800; }
 .blik-field input { border: 1px solid #dce3dc; border-radius: 7px; padding: 12px; letter-spacing: .3em; outline: none; }
 .demo-notice { background: #fff7de; color: #8a672f; border-radius: 7px; padding: 10px; font-size: 8px; line-height: 1.5; margin: 15px 0; }
+.bank-transfer-details { margin-top: 18px; display: grid; gap: 10px; }
+.bank-transfer-details > div { padding: 13px 14px; border: 1px solid #dfe5de; border-radius: 9px; display: grid; gap: 5px; background: #f8faf7; }
+.bank-transfer-details span { color: #71827e; font-size: 11px; }
+.bank-transfer-details strong { overflow-wrap: anywhere; font-size: 14px; line-height: 1.45; }
 .modal-pay { border: 0; }
 .modal-pay:disabled { opacity: .7; cursor: wait; transform: none; }
 .payment-success { text-align: center; padding: 10px 0; }
@@ -825,6 +829,8 @@ button { color: inherit; }
 .theme-dark .payment-modal fieldset label { border-color: #344440; }
 .theme-dark .payment-modal fieldset label.selected { background: #1c2d24; border-color: #90b95b; }
 .theme-dark .demo-notice { background: #392f1b; color: #e7c77e; }
+.theme-dark .bank-transfer-details > div { border-color: #344440; background: #182522; }
+.theme-dark .bank-transfer-details span { color: #9fb0ab; }
 
 @media (min-width: 1500px) {
   .portal-sidebar { width: 288px; flex-basis: 288px; }
