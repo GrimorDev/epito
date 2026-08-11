@@ -7,12 +7,24 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const slugPattern = /^[a-z0-9][a-z0-9-]{2,62}$/;
 
 function databaseStatus(error: unknown) {
   return typeof error === "object" && error !== null && "code" in error
     ? String(error.code)
     : null;
+}
+
+function databaseConstraint(error: unknown) {
+  return typeof error === "object" && error !== null && "constraint" in error
+    ? String((error as { constraint?: unknown }).constraint)
+    : null;
+}
+
+// Portal subdomains are assigned automatically (clientNNNN), never typed in
+// by the supervisor — a human-chosen slug would leak the client's identity
+// into a URL that's supposed to just be a stable, disposable login address.
+function generateTenantSlug(): string {
+  return `client${Math.floor(1000 + Math.random() * 9000)}`;
 }
 
 export async function GET(request: NextRequest) {
@@ -78,7 +90,6 @@ export async function POST(request: NextRequest) {
   }
 
   const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
-  const slug = typeof body?.slug === "string" ? body.slug.trim().toLowerCase() : "";
   const legalName = typeof body?.legalName === "string" ? body.legalName.trim() : "";
   const displayName = typeof body?.displayName === "string" ? body.displayName.trim() : "";
   const nip = typeof body?.nip === "string" ? body.nip.replace(/\D/g, "") : "";
@@ -86,9 +97,6 @@ export async function POST(request: NextRequest) {
   const ownerName = typeof body?.ownerName === "string" ? body.ownerName.trim() : "";
   const ownerPassword = typeof body?.ownerPassword === "string" ? body.ownerPassword : "";
 
-  if (!slugPattern.test(slug)) {
-    return NextResponse.json({ error: "Adres portalu może zawierać małe litery, cyfry i łącznik." }, { status: 400 });
-  }
   if (legalName.length < 2 || legalName.length > 180 || displayName.length < 2 || displayName.length > 100) {
     return NextResponse.json({ error: "Uzupełnij prawidłową nazwę organizacji." }, { status: 400 });
   }
@@ -104,24 +112,34 @@ export async function POST(request: NextRequest) {
   }
 
   const passwordHash = await hashPassword(ownerPassword);
-  try {
-    const created = await withUserTransaction(session.userId, async (client) => {
-      const result = await client.query<{ tenant_id: string; owner_user_id: string }>(
-        "select * from epito_create_tenant_with_owner($1, $2, $3, $4, $5, $6, $7)",
-        [slug, legalName, displayName, nip || null, ownerEmail, ownerName, passwordHash],
+  const MAX_SLUG_ATTEMPTS = 8;
+  for (let attempt = 1; attempt <= MAX_SLUG_ATTEMPTS; attempt += 1) {
+    const slug = generateTenantSlug();
+    try {
+      const created = await withUserTransaction(session.userId, async (client) => {
+        const result = await client.query<{ tenant_id: string; owner_user_id: string }>(
+          "select * from epito_create_tenant_with_owner($1, $2, $3, $4, $5, $6, $7)",
+          [slug, legalName, displayName, nip || null, ownerEmail, ownerName, passwordHash],
+        );
+        return result.rows[0];
+      });
+      const baseDomain = process.env.EPITO_BASE_DOMAIN?.trim() || "localhost";
+      return NextResponse.json(
+        { ok: true, tenantId: created.tenant_id, portalHost: `${slug}.${baseDomain}` },
+        { status: 201 },
       );
-      return result.rows[0];
-    });
-    const baseDomain = process.env.EPITO_BASE_DOMAIN?.trim() || "localhost";
-    return NextResponse.json(
-      { ok: true, tenantId: created.tenant_id, portalHost: `${slug}.${baseDomain}` },
-      { status: 201 },
-    );
-  } catch (error) {
-    if (databaseStatus(error) === "23505") {
-      return NextResponse.json({ error: "Taki adres portalu, NIP lub e-mail już istnieje." }, { status: 409 });
+    } catch (error) {
+      if (databaseStatus(error) === "23505") {
+        // A collision on the auto-generated slug itself just means bad luck
+        // on the random number — silently try a fresh one. Any other unique
+        // violation (NIP or owner email already used) is a real conflict the
+        // supervisor needs to see, not something a new slug would fix.
+        if (databaseConstraint(error) === "tenants_slug_unique" && attempt < MAX_SLUG_ATTEMPTS) continue;
+        return NextResponse.json({ error: "Taki NIP lub e-mail już istnieje." }, { status: 409 });
+      }
+      console.error("Tenant creation failed", error);
+      return NextResponse.json({ error: "Nie udało się utworzyć organizacji." }, { status: 500 });
     }
-    console.error("Tenant creation failed", error);
-    return NextResponse.json({ error: "Nie udało się utworzyć organizacji." }, { status: 500 });
   }
+  return NextResponse.json({ error: "Nie udało się wygenerować unikalnego adresu portalu. Spróbuj ponownie." }, { status: 500 });
 }
