@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { ChangeEvent, CSSProperties, useCallback, useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { DocumentImportModal, DocumentsWorkspace, IssueInvoiceModal, SettingsWorkspace, TeamWorkspace, type WorkspaceDocument } from "./workspace-sections";
+import { isPlatformStaff, platformRoleLabels, type PlatformRole } from "@/lib/platform-access";
 import {
   ArrowLeft,
   ArrowRight,
@@ -25,6 +26,7 @@ import {
   Phone,
   Send,
   Settings,
+  ShieldCheck,
   Sun,
   TrendingDown,
   TrendingUp,
@@ -49,7 +51,7 @@ type PortalMode = "demo" | "production";
 type PortalSession = {
   fullName: string;
   email: string;
-  platformRole: "none" | "support" | "supervisor";
+  platformRole: PlatformRole;
   membershipRole: "owner" | "admin" | "accountant" | "employee" | "viewer" | null;
 };
 type PortalOverview = {
@@ -81,12 +83,12 @@ const initialPayments: Payment[] = [
 ];
 
 const baseDocuments: WorkspaceDocument[] = [
-  { id: 1, name: "FV 2026 07 184, Nova Print", meta: "PDF 842 KB, dodano 4 sierpnia", status: "Przetworzone", type: "PDF", year: 2026, month: "Lipiec", category: "Sprzedaż", amount: "4 920,00 zł", pages: 2 },
+  { id: 1, name: "FV 2026 07 184, Nova Print", meta: "PDF 842 KB, dodano 4 sierpnia", status: "Przetworzone", type: "PDF", year: 2026, month: "Lipiec", category: "Sprzedaż", amount: "4 920,00 zł", pages: 2, issuedInvoiceId: "demo-invoice-1", issuedInvoiceStatus: "accepted" },
   { id: 2, name: "Wyciąg bankowy za lipiec", meta: "CSV 128 KB, dodano 3 sierpnia", status: "Przetworzone", type: "CSV", year: 2026, month: "Lipiec", category: "Bank", pages: 6 },
   { id: 3, name: "FV 07 8831, Office Market", meta: "PDF 1,2 MB, dodano 5 sierpnia", status: "W trakcie", type: "PDF", year: 2026, month: "Lipiec", category: "Koszty", amount: "1 248,60 zł", pages: 3 },
   { id: 4, name: "Umowa leasingu pojazdu", meta: "Brakuje załącznika, dodano 5 sierpnia", status: "Do uzupełnienia", type: "PDF", year: 2026, month: "Lipiec", category: "Umowy", pages: 8 },
-  { id: 5, name: "FV 2026 07 201, Studio Forma", meta: "PDF 620 KB, dodano 6 sierpnia", status: "Przetworzone", type: "PDF", year: 2026, month: "Lipiec", category: "Sprzedaż", amount: "8 610,00 zł", pages: 1 },
-  { id: 6, name: "Faktura za oprogramowanie", meta: "PDF 390 KB, dodano 6 sierpnia", status: "W trakcie", type: "PDF", year: 2026, month: "Lipiec", category: "Koszty", amount: "399,00 zł", pages: 1 },
+  { id: 5, name: "FV 2026 07 201, Studio Forma", meta: "PDF 620 KB, dodano 6 sierpnia", status: "Przetworzone", type: "PDF", year: 2026, month: "Lipiec", category: "Sprzedaż", amount: "8 610,00 zł", pages: 1, issuedInvoiceId: "demo-invoice-5", issuedInvoiceStatus: "rejected", issuedInvoiceError: "Kod 450: rachunek odbiorcy wymaga weryfikacji." },
+  { id: 6, name: "Faktura za oprogramowanie", meta: "PDF 390 KB, dodano 6 sierpnia", status: "W trakcie", type: "PDF", year: 2026, month: "Lipiec", category: "Koszty", amount: "399,00 zł", pages: 1, issuedInvoiceId: "demo-invoice-6", issuedInvoiceStatus: "queued" },
   { id: 7, name: "Wyciąg bankowy za czerwiec", meta: "CSV 116 KB, dodano 2 lipca", status: "Przetworzone", type: "CSV", year: 2026, month: "Czerwiec", category: "Bank", pages: 5 },
 ];
 
@@ -245,7 +247,8 @@ export function ClientPortal({ mode }: { mode: PortalMode }) {
 
   const duePayments = payments.filter((payment) => payment.status !== "paid");
   const nextPayment = duePayments[0];
-  const canAccessOffice = session?.platformRole === "supervisor" || ["owner", "admin", "accountant"].includes(session?.membershipRole || "");
+  const platformOperator = isPlatformStaff(session?.platformRole);
+  const canAccessOffice = platformOperator || ["owner", "admin", "accountant"].includes(session?.membershipRole || "");
   const actionDocumentsList = documents.filter((document) => document.statusCode ? document.statusCode !== "verified" : document.status !== "Przetworzone");
   const newDuePayments = duePayments.filter((payment) => !seenNotificationIds.payments.includes(String(payment.id)));
   const newActionDocuments = actionDocumentsList.filter((document) => !seenNotificationIds.documents.includes(String(document.id)));
@@ -405,6 +408,7 @@ export function ClientPortal({ mode }: { mode: PortalMode }) {
       {mobileMenu && <button className="sidebar-backdrop" aria-label="Zamknij menu" onClick={() => setMobileMenu(false)} />}
 
       <section className="portal-main">
+        {production && platformOperator ? <div className="operator-access-banner"><span><ShieldCheck size={18} /><strong>Dostęp techniczny</strong><small>{platformRoleLabels[session!.platformRole]} przegląda organizację {companyName}. Wejście jest zapisane w dzienniku audytowym.</small></span><button type="button" onClick={() => router.push("/admin")}><ArrowLeft size={17} /> Wróć do panelu platformy</button></div> : null}
         <header className="portal-topbar">
           <button className="mobile-sidebar-button" onClick={() => setMobileMenu(true)} aria-label="Otwórz menu"><Menu size={24} /></button>
           <div className="company-switcher" aria-label="Aktywna firma">
@@ -421,11 +425,7 @@ export function ClientPortal({ mode }: { mode: PortalMode }) {
             <div className="notification-wrap">
               <button
                 className="notification-button"
-                onClick={() => setNotificationsOpen((value) => {
-                  const next = !value;
-                  if (next && production) markNotificationsSeen();
-                  return next;
-                })}
+                onClick={() => setNotificationsOpen((value) => !value)}
                 aria-label="Powiadomienia"
               >
                 <Bell size={21} />
@@ -435,19 +435,17 @@ export function ClientPortal({ mode }: { mode: PortalMode }) {
                 {notificationsOpen && (
                   <motion.div className="notification-popover" initial={{ opacity: 0, y: 8, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 6, scale: 0.98 }} transition={{ duration: 0.18 }}>
                     <div><strong>Powiadomienia</strong><button onClick={() => setNotificationsOpen(false)} aria-label="Zamknij"><X size={20} /></button></div>
-                    {production ? (
+                    {production && duePayments.length + actionDocuments === 0 ? (
+                      <div className="notification-empty"><Check size={19} /><span><b>Wszystko sprawdzone</b><small>Nie masz nowych powiadomień.</small></span></div>
+                    ) : production ? (
                       <>
-                        <p role="button" tabIndex={0} onClick={() => openNotification("Płatności")} onKeyDown={(event) => event.key === "Enter" && openNotification("Płatności")}>
-                          <span className="notification-icon success"><Check size={15} /></span><b>{duePayments.length} płatności oczekuje</b><small>Zobacz płatności</small>
-                        </p>
-                        <p role="button" tabIndex={0} onClick={() => openNotification("Dokumenty")} onKeyDown={(event) => event.key === "Enter" && openNotification("Dokumenty")}>
-                          <span className="notification-icon warning"><FileText size={15} /></span><b>{actionDocuments} dokumentów wymaga uwagi</b><small>Zobacz dokumenty</small>
-                        </p>
+                        {duePayments.length ? <button className="notification-item" type="button" onClick={() => openNotification("Płatności")}><span className="notification-icon success"><Check size={15} /></span><span><b>{duePayments.length} płatności oczekuje</b><small>Zobacz płatności</small></span><ArrowRight size={16} /></button> : null}
+                        {actionDocuments ? <button className="notification-item" type="button" onClick={() => openNotification("Dokumenty")}><span className="notification-icon warning"><FileText size={15} /></span><span><b>{actionDocuments} dokumentów wymaga uwagi</b><small>Zobacz dokumenty</small></span><ArrowRight size={16} /></button> : null}
                       </>
                     ) : (
                       <>
-                        <p><span className="notification-icon success"><Check size={15} /></span><b>Wyliczenie VAT jest gotowe</b><small>Dzisiaj, 08:42</small></p>
-                        <p><span className="notification-icon warning"><FileText size={15} /></span><b>Brakuje umowy leasingu</b><small>Wczoraj, 14:10</small></p>
+                        <button className="notification-item" type="button" onClick={() => openNotification("Płatności")}><span className="notification-icon success"><Check size={15} /></span><span><b>Wyliczenie VAT jest gotowe</b><small>Dzisiaj, 08:42</small></span><ArrowRight size={16} /></button>
+                        <button className="notification-item" type="button" onClick={() => openNotification("Dokumenty")}><span className="notification-icon warning"><FileText size={15} /></span><span><b>Brakuje umowy leasingu</b><small>Wczoraj, 14:10</small></span><ArrowRight size={16} /></button>
                       </>
                     )}
                   </motion.div>
@@ -462,7 +460,7 @@ export function ClientPortal({ mode }: { mode: PortalMode }) {
                 <ChevronDown size={18} />
               </button>
               <AnimatePresence>
-                {profileOpen ? <motion.div className="profile-popover" initial={{ opacity: 0, y: 8, scale: .98 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 6, scale: .98 }}><div><strong>{userName}</strong><small>{session?.email || "konto demonstracyjne"}</small></div><button onClick={() => { setProfileOpen(false); selectSection("Ustawienia"); }}><Settings size={17} /> Ustawienia konta</button>{production && canAccessOffice ? <button onClick={() => { setProfileOpen(false); router.push("/office"); }}><Building2 size={17} /> Zaplecze biura</button> : null}{production ? <button onClick={logout}><ArrowLeft size={17} /> Wyloguj się</button> : <Link href="/"><ArrowLeft size={17} /> Strona główna</Link>}</motion.div> : null}
+                {profileOpen ? <motion.div className="profile-popover" initial={{ opacity: 0, y: 8, scale: .98 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 6, scale: .98 }}><div><strong>{userName}</strong><small>{session?.email || "konto demonstracyjne"}</small></div><button onClick={() => { setProfileOpen(false); selectSection("Ustawienia"); }}><Settings size={17} /> Ustawienia konta</button>{production && canAccessOffice ? <button onClick={() => { setProfileOpen(false); router.push(platformOperator ? "/admin" : "/office"); }}><Building2 size={17} /> {platformOperator ? "Panel platformy" : "Zaplecze biura"}</button> : null}{production ? <button onClick={logout}><ArrowLeft size={17} /> Wyloguj się</button> : <Link href="/"><ArrowLeft size={17} /> Strona główna</Link>}</motion.div> : null}
               </AnimatePresence>
             </div>
           </div>
@@ -549,7 +547,7 @@ export function ClientPortal({ mode }: { mode: PortalMode }) {
                   <section className="advisor-banner">
                     <div className="advisor-avatar">{production ? initials(companyName) : "AK"}</div>
                     <div><small>{production ? "TWOJA ORGANIZACJA" : "TWÓJ OPIEKUN"}</small><h3>{production ? companyName : "Anna Kowalska"} <span className="availability">Aktywna</span></h3><p>{production ? legalName : "Poniedziałek do piątku, od 8:00 do 16:00."}</p></div>
-                    <button onClick={() => production ? (canAccessOffice ? router.push("/office") : selectSection("Ustawienia")) : selectSection("Wiadomości")}><MessageSquareText size={17} /> {production ? (canAccessOffice ? "Zarządzaj danymi" : "Ustawienia organizacji") : "Napisz wiadomość"}</button>
+                    <button onClick={() => production ? (canAccessOffice ? router.push(platformOperator ? "/admin" : "/office") : selectSection("Ustawienia")) : selectSection("Wiadomości")}><MessageSquareText size={17} /> {production ? (canAccessOffice ? "Zarządzaj danymi" : "Ustawienia organizacji") : "Napisz wiadomość"}</button>
                     <div className="advisor-phone"><small>{production ? "NIP" : "TELEFON"}</small><strong>{production ? null : <Phone size={14} />} {production ? overview?.tenant.nip || "Nie podano" : "+48 22 123 45 67"}</strong></div>
                   </section>
                 </>

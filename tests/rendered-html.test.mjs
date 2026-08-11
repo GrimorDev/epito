@@ -58,7 +58,7 @@ test("keeps public demo and production data flows explicitly separated", async (
   assert.match(demo, /export function ClientPortal/);
   assert.match(login, /\/api\/auth\/login/);
   assert.match(login, /router\.push\(payload\.redirectTo\)/);
-  assert.match(authRoute, /platformRole === "supervisor" \? "\/admin"/);
+  assert.match(authRoute, /isPlatformStaff\(identity\.platformRole\) \? "\/admin"/);
   assert.match(compose, /pull_policy:\s*\$\{EPITO_PULL_POLICY:-build\}/);
   assert.match(compose, /EPITO_PORT:-8063/);
   assert.match(compose, /uploads_data:\/app\/data\/uploads/);

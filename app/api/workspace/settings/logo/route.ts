@@ -4,6 +4,7 @@ import path from "node:path";
 import { NextRequest, NextResponse } from "next/server";
 import { getSession, isSameOrigin } from "@/lib/server/auth";
 import { withTenantTransaction } from "@/lib/server/database";
+import { canEditTenantData } from "@/lib/platform-access";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -42,7 +43,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   if (!isSameOrigin(request)) return NextResponse.json({ error: "Nieprawidłowe źródło żądania." }, { status: 403 });
   const session = await getSession(request);
-  const canEdit = session?.platformRole === "supervisor" || ["owner", "admin"].includes(session?.membershipRole || "");
+  const canEdit = canEditTenantData(session?.platformRole) || ["owner", "admin"].includes(session?.membershipRole || "");
   if (!session?.tenantId || !canEdit) return NextResponse.json({ error: "Brak uprawnień." }, { status: 403 });
   const form = await request.formData().catch(() => null);
   const file = form?.get("logo");

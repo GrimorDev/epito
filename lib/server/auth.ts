@@ -1,6 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import type { NextRequest, NextResponse } from "next/server";
 import { getRedis } from "./redis";
+import type { PlatformRole } from "../platform-access";
 
 const SESSION_COOKIE = "epito_session";
 const SESSION_TTL_SECONDS = 12 * 60 * 60;
@@ -9,7 +10,7 @@ export type AuthSession = {
   userId: string;
   email: string;
   fullName: string;
-  platformRole: "none" | "support" | "supervisor";
+  platformRole: PlatformRole;
   tenantId: string | null;
   tenantSlug: string | null;
   tenantName: string | null;

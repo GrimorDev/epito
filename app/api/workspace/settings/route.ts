@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession, isSameOrigin } from "@/lib/server/auth";
 import { withTenantTransaction } from "@/lib/server/database";
+import { canEditTenantData } from "@/lib/platform-access";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -10,7 +11,7 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({ error: "Nieprawidłowe źródło żądania." }, { status: 403 });
   }
   const session = await getSession(request);
-  const allowed = session?.platformRole === "supervisor" || ["owner", "admin"].includes(session?.membershipRole || "");
+  const allowed = canEditTenantData(session?.platformRole) || ["owner", "admin"].includes(session?.membershipRole || "");
   if (!session?.tenantId || !allowed) {
     return NextResponse.json({ error: "Brak uprawnień." }, { status: 403 });
   }

@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession, isSameOrigin } from "@/lib/server/auth";
 import { withTenantTransaction } from "@/lib/server/database";
+import { canEditTenantData } from "@/lib/platform-access";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 const canCreateClient = (role: string | null, platformRole: string) =>
-  platformRole === "supervisor" || role === "owner" || role === "admin" || role === "accountant";
+  canEditTenantData(platformRole) || role === "owner" || role === "admin" || role === "accountant";
 
 export async function POST(request: NextRequest) {
   if (!isSameOrigin(request)) {

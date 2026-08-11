@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSession, isSameOrigin } from "@/lib/server/auth";
 import { withUserTransaction } from "@/lib/server/database";
 import { hashPassword, validatePassword } from "@/lib/server/passwords";
+import { canManageOrganizations, isPlatformStaff } from "@/lib/platform-access";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -29,7 +30,7 @@ function generateTenantSlug(): string {
 
 export async function GET(request: NextRequest) {
   const session = await getSession(request);
-  if (!session || session.platformRole !== "supervisor") {
+  if (!session || !isPlatformStaff(session.platformRole)) {
     return NextResponse.json({ error: "Brak dostępu." }, { status: 401 });
   }
 
@@ -44,6 +45,10 @@ export async function GET(request: NextRequest) {
       created_at: string;
       clients_count: number;
       users_count: number;
+      documents_count: number;
+      requires_action_count: number;
+      due_payments_count: number;
+      failed_payments_count: number;
     }>(`
       select
         tenant.id,
@@ -54,17 +59,47 @@ export async function GET(request: NextRequest) {
         tenant.status,
         tenant.created_at,
         (select count(*)::int from client_companies company where company.tenant_id = tenant.id and company.deleted_at is null) as clients_count,
-        (select count(*)::int from tenant_memberships membership where membership.tenant_id = tenant.id and membership.status = 'active') as users_count
+        (select count(*)::int from tenant_memberships membership where membership.tenant_id = tenant.id and membership.status = 'active') as users_count,
+        (select count(*)::int from documents document where document.tenant_id = tenant.id and document.deleted_at is null) as documents_count,
+        (select count(*)::int from documents document where document.tenant_id = tenant.id and document.status = 'requires_action' and document.deleted_at is null) as requires_action_count,
+        (select count(*)::int from payments payment where payment.tenant_id = tenant.id and payment.status in ('due', 'scheduled', 'processing')) as due_payments_count,
+        (select count(*)::int from payments payment where payment.tenant_id = tenant.id and payment.status = 'failed') as failed_payments_count
       from tenants tenant
       where tenant.deleted_at is null
       order by tenant.created_at desc
     `);
-    return result.rows;
+    const activityResult = await client.query<{
+      id: string;
+      action: string;
+      entity_type: string;
+      created_at: string;
+      tenant_name: string;
+      actor_name: string | null;
+    }>(`
+      select activity.id, activity.action, activity.entity_type, activity.created_at,
+        activity.tenant_name, activity.actor_name
+      from (
+        select audit.id::text as id, audit.action, audit.entity_type, audit.created_at,
+          tenant.display_name as tenant_name, actor.full_name as actor_name
+        from audit_log audit
+        join tenants tenant on tenant.id = audit.tenant_id
+        left join users actor on actor.id = audit.actor_user_id
+        union all
+        select concat('platform-', audit.id)::text as id, audit.action, audit.entity_type, audit.created_at,
+          coalesce(audit.metadata->>'tenant_name', 'Platforma Epito') as tenant_name,
+          actor.full_name as actor_name
+        from platform_audit_log audit
+        left join users actor on actor.id = audit.actor_user_id
+      ) activity
+      order by activity.created_at desc
+      limit 10
+    `);
+    return { tenants: result.rows, activity: activityResult.rows };
   });
 
   const baseDomain = process.env.EPITO_BASE_DOMAIN?.trim() || "localhost";
   return NextResponse.json({
-    tenants: tenants.map((tenant) => ({
+    tenants: tenants.tenants.map((tenant) => ({
       id: tenant.id,
       slug: tenant.slug,
       legalName: tenant.legal_name,
@@ -74,7 +109,19 @@ export async function GET(request: NextRequest) {
       createdAt: tenant.created_at,
       clientsCount: tenant.clients_count,
       usersCount: tenant.users_count,
+      documentsCount: tenant.documents_count,
+      requiresActionCount: tenant.requires_action_count,
+      duePaymentsCount: tenant.due_payments_count,
+      failedPaymentsCount: tenant.failed_payments_count,
       portalHost: `${tenant.slug}.${baseDomain}`,
+    })),
+    activity: tenants.activity.map((entry) => ({
+      id: entry.id,
+      action: entry.action,
+      entityType: entry.entity_type,
+      createdAt: entry.created_at,
+      tenantName: entry.tenant_name,
+      actorName: entry.actor_name,
     })),
   });
 }
@@ -85,7 +132,7 @@ export async function POST(request: NextRequest) {
   }
 
   const session = await getSession(request);
-  if (!session || session.platformRole !== "supervisor") {
+  if (!session || !canManageOrganizations(session.platformRole)) {
     return NextResponse.json({ error: "Brak dostępu." }, { status: 401 });
   }
 

@@ -2,12 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSession, isSameOrigin } from "@/lib/server/auth";
 import { withTenantTransaction } from "@/lib/server/database";
 import { enqueueBackgroundJob } from "@/lib/server/queues";
+import { canEditTenantData } from "@/lib/platform-access";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 function canTriggerSync(role: string | null, platformRole: string) {
-  return platformRole === "supervisor" || ["owner", "admin", "accountant", "employee"].includes(role || "");
+  return canEditTenantData(platformRole) || ["owner", "admin", "accountant", "employee"].includes(role || "");
 }
 
 export async function POST(request: NextRequest) {
