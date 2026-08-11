@@ -243,7 +243,7 @@ export default function SupervisorPage() {
               <div className={styles.field}><label htmlFor="displayName">Nazwa w panelu</label><input id="displayName" name="displayName" required maxLength={100} placeholder="Kowalscy Księgowość" /></div>
               <div className={styles.field}><label htmlFor="legalName">Pełna nazwa firmy</label><input id="legalName" name="legalName" required maxLength={180} placeholder="Kowalscy Księgowość sp. z o.o." /></div>
               <div className={styles.field}><label htmlFor="nip">NIP</label><input id="nip" name="nip" inputMode="numeric" maxLength={10} placeholder="1234567890" /></div>
-              <div className={styles.field}><label htmlFor="slug">Adres portalu</label><input id="slug" name="slug" required minLength={3} maxLength={63} pattern="[a-z0-9][a-z0-9-]{2,62}" placeholder="kowalscy" /><small>Małe litery, cyfry i łącznik. Zostanie utworzony adres w domenie Epito.</small></div>
+              <div className={`${styles.field} ${styles.fieldFull}`}><span>Adres portalu</span><small>Zostanie nadany automatycznie w formacie clientXXXX.epito.pl — zobaczysz go od razu po utworzeniu organizacji.</small></div>
               <hr className={styles.formDivider} />
               <div className={styles.field}><label htmlFor="ownerName">Imię i nazwisko właściciela</label><input id="ownerName" name="ownerName" required maxLength={120} autoComplete="name" /></div>
               <div className={styles.field}><label htmlFor="ownerEmail">E-mail właściciela</label><input id="ownerEmail" name="ownerEmail" type="email" required maxLength={254} autoComplete="email" /></div>
