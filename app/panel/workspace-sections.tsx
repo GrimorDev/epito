@@ -117,7 +117,7 @@ export function DocumentsWorkspace({ documents, setDocuments, onUpload, onOpenIm
   const [category, setCategory] = useState("Wszystkie");
   const [query, setQuery] = useState("");
   const [expandedId, setExpandedId] = useState<string | number | null>(documents[0]?.id ?? null);
-  const [previewId, setPreviewId] = useState<string | number | null>(documents[0]?.id ?? null);
+  const [previewId, setPreviewId] = useState<string | number | null>(null);
   const [editingId, setEditingId] = useState<string | number | null>(null);
   const [draftName, setDraftName] = useState("");
   const [draftCategory, setDraftCategory] = useState("other");
@@ -145,13 +145,18 @@ export function DocumentsWorkspace({ documents, setDocuments, onUpload, onOpenIm
   const editingDocument = documents.find((document) => document.id === editingId) ?? null;
 
   useEffect(() => {
-    if (!fullscreenDocument && !editingDocument) return;
+    if (!preview && !fullscreenDocument && !editingDocument) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
     function closeOnEscape(event: KeyboardEvent) {
-      if (event.key === "Escape") { setFullscreenId(null); setEditingId(null); }
+      if (event.key === "Escape") { setPreviewId(null); setFullscreenId(null); setEditingId(null); }
     }
     window.addEventListener("keydown", closeOnEscape);
-    return () => window.removeEventListener("keydown", closeOnEscape);
-  }, [fullscreenDocument, editingDocument]);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [preview, fullscreenDocument, editingDocument]);
 
   async function removeDocument(id: string | number) {
     if (production) {
@@ -170,6 +175,7 @@ export function DocumentsWorkspace({ documents, setDocuments, onUpload, onOpenIm
   }
 
   function beginEdit(document: WorkspaceDocument) {
+    setPreviewId(null);
     setFullscreenId(null);
     setEditingId(document.id);
     setDraftName(document.name);
@@ -351,37 +357,37 @@ export function DocumentsWorkspace({ documents, setDocuments, onUpload, onOpenIm
           </div>
         </div>
 
-        <aside className="document-preview-panel">
-          {preview ? (
-            <>
-              <div className="preview-panel-head"><div><small>PODGLĄD</small><strong>{preview.name}</strong></div><button onClick={() => setPreviewId(null)} aria-label="Zamknij podgląd"><X size={20} /></button></div>
-              <div className="pdf-preview"><DocumentViewer document={preview} production={production} /><span>{production ? "Oryginalny plik" : `Strona 1 z ${preview.pages ?? 1}`}</span></div>
-              <div className="preview-metadata">
-                <div><span>Folder</span><strong>{preview.category}</strong></div>
-                <div><span>Okres</span><strong>{preview.month} {preview.year}</strong></div>
-                <div><span>Status</span><strong>{preview.status}</strong></div>
-                <div><span>Kwota</span><strong>{preview.amount ?? "Nie dotyczy"}</strong></div>
-                {preview.issuedInvoiceStatus ? <div><span>Status KSeF</span><strong>{issuedInvoiceStatusLabels[preview.issuedInvoiceStatus] || preview.issuedInvoiceStatus}</strong></div> : null}
-              </div>
-              {preview.issuedInvoiceStatus === "failed" || preview.issuedInvoiceStatus === "rejected" ? (
-                <div className="analysis-note">
-                  <strong>{issuedInvoiceStatusLabels[preview.issuedInvoiceStatus] || preview.issuedInvoiceStatus}</strong>
-                  <span>{preview.issuedInvoiceError || "KSeF nie przyjął tej faktury."}</span>
-                </div>
-              ) : null}
-              {(preview.issuedInvoiceStatus === "failed" || preview.issuedInvoiceStatus === "rejected") && preview.issuedInvoiceId ? (
-                <button className="reanalyze-document" onClick={() => void retryInvoice(preview.issuedInvoiceId!)} disabled={retryingInvoiceId === preview.issuedInvoiceId}>
-                  <RefreshCw size={16} className={retryingInvoiceId === preview.issuedInvoiceId ? "spinning" : ""} />
-                  {retryingInvoiceId === preview.issuedInvoiceId ? "Wysyłam ponownie" : "Wyślij ponownie do KSeF"}
-                </button>
-              ) : null}
-              {preview.manualOverride ?<div className="analysis-note"><strong>Dane poprawione ręcznie</strong><span>Kwota, status lub data zostały zatwierdzone przez użytkownika i mają pierwszeństwo przed OCR.</span></div> : preview.analysis ? <div className="analysis-note"><strong>{preview.analysis.method === "ocr" ? "Odczyt OCR" : "Tekst z PDF"}{typeof preview.analysis.confidence === "number" && preview.analysis.confidence > 0 ? ` · ${Math.round(preview.analysis.confidence * 100)}% pewności` : ""}</strong><span>{preview.analysis.reason || (preview.analysis.amount_source ? `Kwota znaleziona przy polu „${preview.analysis.amount_source}”.` : "Dane dokumentu zostały przeanalizowane.")}</span></div> : <div className="analysis-note"><strong>{preview.statusCode === "processing" || preview.statusCode === "uploaded" ? "Analiza trwa" : "Brak analizy"}</strong><span>{preview.statusCode === "processing" || preview.statusCode === "uploaded" ? "Worker odczytuje tekst i kwotę. Widok odświeży się automatycznie po zakończeniu." : "Kwotę i metadane możesz uzupełnić ręcznie."}</span></div>}
-              {production && !preview.manualOverride && preview.statusCode !== "processing" ? <button className="reanalyze-document" onClick={() => void reanalyzeDocument(preview.id)} disabled={reanalyzingId === preview.id}><RefreshCw size={16} className={reanalyzingId === preview.id ? "spinning" : ""} />{reanalyzingId === preview.id ? "Dodawanie do kolejki" : "Analizuj ponownie"}</button> : null}
-              <div className="preview-actions"><button onClick={() => setFullscreenId(preview.id)}><Maximize2 size={17} /> Pełny ekran</button>{production ? <a className="document-download-link" href={`/api/workspace/documents/${preview.id}`}><Download size={17} /> Pobierz</a> : <button><Download size={17} /> Pobierz</button>}{production && preview.mimeType?.includes("xml") ? <a className="document-download-link" href={`/api/workspace/documents/${preview.id}?format=pdf`}><Download size={17} /> Pobierz PDF</a> : null}<button onClick={() => beginEdit(preview)}><Pencil size={17} /> Dane</button></div>
-            </>
-          ) : <div className="preview-empty"><Eye size={28} /><strong>Wybierz dokument</strong><p>Podgląd pojawi się tutaj bez otwierania nowej karty.</p></div>}
-        </aside>
       </div>
+
+      <AnimatePresence>
+        {preview ? (
+          <motion.div className="document-preview-backdrop" role="dialog" aria-modal="true" aria-label={`Podgląd dokumentu ${preview.name}`} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onMouseDown={(event) => { if (event.currentTarget === event.target) setPreviewId(null); }}>
+            <motion.section className="document-preview-modal" initial={{ opacity: 0, scale: .975, y: 18 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: .98, y: 12 }} transition={{ duration: .2, ease: "easeOut" }}>
+              <header className="document-preview-modal-head">
+                <div><small>PODGLĄD DOKUMENTU</small><strong>{preview.name}</strong><span>{preview.meta}</span></div>
+                <button type="button" onClick={() => setPreviewId(null)} aria-label="Zamknij podgląd" autoFocus><X size={22} /></button>
+              </header>
+              <div className="document-preview-modal-body">
+                <div className="document-preview-canvas"><DocumentViewer document={preview} production={production} fullscreen /></div>
+                <aside className="document-preview-sidebar">
+                  <div className="preview-metadata">
+                    <div><span>Folder</span><strong>{preview.category}</strong></div>
+                    <div><span>Okres</span><strong>{preview.month} {preview.year}</strong></div>
+                    <div><span>Status</span><strong>{preview.status}</strong></div>
+                    <div><span>Kwota</span><strong>{preview.amount ?? "Nie dotyczy"}</strong></div>
+                    {preview.issuedInvoiceStatus ? <div><span>Status KSeF</span><strong>{issuedInvoiceStatusLabels[preview.issuedInvoiceStatus] || preview.issuedInvoiceStatus}</strong></div> : null}
+                  </div>
+                  {preview.issuedInvoiceStatus === "failed" || preview.issuedInvoiceStatus === "rejected" ? <div className="analysis-note status-error-note"><strong>{issuedInvoiceStatusLabels[preview.issuedInvoiceStatus] || preview.issuedInvoiceStatus}</strong><span>{preview.issuedInvoiceError || "KSeF nie przyjął tej faktury."}</span></div> : null}
+                  {(preview.issuedInvoiceStatus === "failed" || preview.issuedInvoiceStatus === "rejected") && preview.issuedInvoiceId ? <button className="reanalyze-document" onClick={() => void retryInvoice(preview.issuedInvoiceId!)} disabled={retryingInvoiceId === preview.issuedInvoiceId}><RefreshCw size={16} className={retryingInvoiceId === preview.issuedInvoiceId ? "spinning" : ""} />{retryingInvoiceId === preview.issuedInvoiceId ? "Wysyłam ponownie" : "Wyślij ponownie do KSeF"}</button> : null}
+                  {preview.manualOverride ? <div className="analysis-note"><strong>Dane poprawione ręcznie</strong><span>Kwota, status lub data zostały zatwierdzone przez użytkownika i mają pierwszeństwo przed OCR.</span></div> : preview.analysis ? <div className="analysis-note"><strong>{preview.analysis.method === "ocr" ? "Odczyt OCR" : "Tekst z PDF"}{typeof preview.analysis.confidence === "number" && preview.analysis.confidence > 0 ? ` · ${Math.round(preview.analysis.confidence * 100)}% pewności` : ""}</strong><span>{preview.analysis.reason || (preview.analysis.amount_source ? `Kwota znaleziona przy polu „${preview.analysis.amount_source}”.` : "Dane dokumentu zostały przeanalizowane.")}</span></div> : <div className="analysis-note"><strong>{preview.statusCode === "processing" || preview.statusCode === "uploaded" ? "Analiza trwa" : "Brak analizy"}</strong><span>{preview.statusCode === "processing" || preview.statusCode === "uploaded" ? "Worker odczytuje tekst i kwotę. Widok odświeży się automatycznie po zakończeniu." : "Kwotę i metadane możesz uzupełnić ręcznie."}</span></div>}
+                  {production && !preview.manualOverride && preview.statusCode !== "processing" ? <button className="reanalyze-document" onClick={() => void reanalyzeDocument(preview.id)} disabled={reanalyzingId === preview.id}><RefreshCw size={16} className={reanalyzingId === preview.id ? "spinning" : ""} />{reanalyzingId === preview.id ? "Dodawanie do kolejki" : "Analizuj ponownie"}</button> : null}
+                  <div className="preview-actions"><button onClick={() => { setPreviewId(null); setFullscreenId(preview.id); }}><Maximize2 size={17} /> Pełny ekran</button>{production ? <a className="document-download-link" href={`/api/workspace/documents/${preview.id}`}><Download size={17} /> Pobierz</a> : <button><Download size={17} /> Pobierz</button>}{production && preview.mimeType?.includes("xml") ? <a className="document-download-link" href={`/api/workspace/documents/${preview.id}?format=pdf`}><Download size={17} /> Pobierz PDF</a> : null}<button onClick={() => beginEdit(preview)}><Pencil size={17} /> Edytuj dane</button></div>
+                </aside>
+              </div>
+            </motion.section>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
 
       <AnimatePresence>
         {fullscreenDocument ? <motion.div className="document-modal-backdrop" role="dialog" aria-modal="true" aria-label={`Pełny podgląd ${fullscreenDocument.name}`} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}><motion.div className="document-fullscreen-modal" initial={{ scale: .98, y: 10 }} animate={{ scale: 1, y: 0 }} exit={{ scale: .98, y: 10 }}><header><div><small>ORYGINALNY DOKUMENT</small><strong>{fullscreenDocument.name}</strong></div><div>{production ? <a href={`/api/workspace/documents/${fullscreenDocument.id}`}><Download size={18} /> Pobierz</a> : null}<button onClick={() => beginEdit(fullscreenDocument)}><Pencil size={18} /> Dane</button><button className="icon-only" onClick={() => setFullscreenId(null)} aria-label="Zamknij pełny podgląd"><X size={22} /></button></div></header><div className="document-fullscreen-canvas"><DocumentViewer document={fullscreenDocument} production={production} fullscreen /></div></motion.div></motion.div> : null}
