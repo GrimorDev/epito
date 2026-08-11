@@ -81,12 +81,12 @@ const initialPayments: Payment[] = [
 ];
 
 const baseDocuments: WorkspaceDocument[] = [
-  { id: 1, name: "FV 2026 07 184, Nova Print", meta: "PDF 842 KB, dodano 4 sierpnia", status: "Przetworzone", type: "PDF", year: 2026, month: "Lipiec", category: "Sprzedaż", amount: "4 920,00 zł", pages: 2 },
+  { id: 1, name: "FV 2026 07 184, Nova Print", meta: "PDF 842 KB, dodano 4 sierpnia", status: "Przetworzone", type: "PDF", year: 2026, month: "Lipiec", category: "Sprzedaż", amount: "4 920,00 zł", pages: 2, issuedInvoiceId: "demo-invoice-1", issuedInvoiceStatus: "accepted" },
   { id: 2, name: "Wyciąg bankowy za lipiec", meta: "CSV 128 KB, dodano 3 sierpnia", status: "Przetworzone", type: "CSV", year: 2026, month: "Lipiec", category: "Bank", pages: 6 },
   { id: 3, name: "FV 07 8831, Office Market", meta: "PDF 1,2 MB, dodano 5 sierpnia", status: "W trakcie", type: "PDF", year: 2026, month: "Lipiec", category: "Koszty", amount: "1 248,60 zł", pages: 3 },
   { id: 4, name: "Umowa leasingu pojazdu", meta: "Brakuje załącznika, dodano 5 sierpnia", status: "Do uzupełnienia", type: "PDF", year: 2026, month: "Lipiec", category: "Umowy", pages: 8 },
-  { id: 5, name: "FV 2026 07 201, Studio Forma", meta: "PDF 620 KB, dodano 6 sierpnia", status: "Przetworzone", type: "PDF", year: 2026, month: "Lipiec", category: "Sprzedaż", amount: "8 610,00 zł", pages: 1 },
-  { id: 6, name: "Faktura za oprogramowanie", meta: "PDF 390 KB, dodano 6 sierpnia", status: "W trakcie", type: "PDF", year: 2026, month: "Lipiec", category: "Koszty", amount: "399,00 zł", pages: 1 },
+  { id: 5, name: "FV 2026 07 201, Studio Forma", meta: "PDF 620 KB, dodano 6 sierpnia", status: "Przetworzone", type: "PDF", year: 2026, month: "Lipiec", category: "Sprzedaż", amount: "8 610,00 zł", pages: 1, issuedInvoiceId: "demo-invoice-5", issuedInvoiceStatus: "rejected", issuedInvoiceError: "Kod 450: rachunek odbiorcy wymaga weryfikacji." },
+  { id: 6, name: "Faktura za oprogramowanie", meta: "PDF 390 KB, dodano 6 sierpnia", status: "W trakcie", type: "PDF", year: 2026, month: "Lipiec", category: "Koszty", amount: "399,00 zł", pages: 1, issuedInvoiceId: "demo-invoice-6", issuedInvoiceStatus: "queued" },
   { id: 7, name: "Wyciąg bankowy za czerwiec", meta: "CSV 116 KB, dodano 2 lipca", status: "Przetworzone", type: "CSV", year: 2026, month: "Czerwiec", category: "Bank", pages: 5 },
 ];
 
@@ -421,11 +421,7 @@ export function ClientPortal({ mode }: { mode: PortalMode }) {
             <div className="notification-wrap">
               <button
                 className="notification-button"
-                onClick={() => setNotificationsOpen((value) => {
-                  const next = !value;
-                  if (next && production) markNotificationsSeen();
-                  return next;
-                })}
+                onClick={() => setNotificationsOpen((value) => !value)}
                 aria-label="Powiadomienia"
               >
                 <Bell size={21} />
@@ -435,19 +431,17 @@ export function ClientPortal({ mode }: { mode: PortalMode }) {
                 {notificationsOpen && (
                   <motion.div className="notification-popover" initial={{ opacity: 0, y: 8, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 6, scale: 0.98 }} transition={{ duration: 0.18 }}>
                     <div><strong>Powiadomienia</strong><button onClick={() => setNotificationsOpen(false)} aria-label="Zamknij"><X size={20} /></button></div>
-                    {production ? (
+                    {production && duePayments.length + actionDocuments === 0 ? (
+                      <div className="notification-empty"><Check size={19} /><span><b>Wszystko sprawdzone</b><small>Nie masz nowych powiadomień.</small></span></div>
+                    ) : production ? (
                       <>
-                        <p role="button" tabIndex={0} onClick={() => openNotification("Płatności")} onKeyDown={(event) => event.key === "Enter" && openNotification("Płatności")}>
-                          <span className="notification-icon success"><Check size={15} /></span><b>{duePayments.length} płatności oczekuje</b><small>Zobacz płatności</small>
-                        </p>
-                        <p role="button" tabIndex={0} onClick={() => openNotification("Dokumenty")} onKeyDown={(event) => event.key === "Enter" && openNotification("Dokumenty")}>
-                          <span className="notification-icon warning"><FileText size={15} /></span><b>{actionDocuments} dokumentów wymaga uwagi</b><small>Zobacz dokumenty</small>
-                        </p>
+                        {duePayments.length ? <button className="notification-item" type="button" onClick={() => openNotification("Płatności")}><span className="notification-icon success"><Check size={15} /></span><span><b>{duePayments.length} płatności oczekuje</b><small>Zobacz płatności</small></span><ArrowRight size={16} /></button> : null}
+                        {actionDocuments ? <button className="notification-item" type="button" onClick={() => openNotification("Dokumenty")}><span className="notification-icon warning"><FileText size={15} /></span><span><b>{actionDocuments} dokumentów wymaga uwagi</b><small>Zobacz dokumenty</small></span><ArrowRight size={16} /></button> : null}
                       </>
                     ) : (
                       <>
-                        <p><span className="notification-icon success"><Check size={15} /></span><b>Wyliczenie VAT jest gotowe</b><small>Dzisiaj, 08:42</small></p>
-                        <p><span className="notification-icon warning"><FileText size={15} /></span><b>Brakuje umowy leasingu</b><small>Wczoraj, 14:10</small></p>
+                        <button className="notification-item" type="button" onClick={() => openNotification("Płatności")}><span className="notification-icon success"><Check size={15} /></span><span><b>Wyliczenie VAT jest gotowe</b><small>Dzisiaj, 08:42</small></span><ArrowRight size={16} /></button>
+                        <button className="notification-item" type="button" onClick={() => openNotification("Dokumenty")}><span className="notification-icon warning"><FileText size={15} /></span><span><b>Brakuje umowy leasingu</b><small>Wczoraj, 14:10</small></span><ArrowRight size={16} /></button>
                       </>
                     )}
                   </motion.div>

@@ -188,11 +188,11 @@ export default function SupervisorPage() {
           </header>
 
           {createdPortalHost ? (
-            <div className={styles.success} role="status">
-              <strong>Organizacja utworzona.</strong> Link logowania dla tego klienta:{" "}
-              <a href={`https://${createdPortalHost}`} target="_blank" rel="noreferrer">{createdPortalHost}</a>
-              <button type="button" onClick={() => void navigator.clipboard.writeText(`https://${createdPortalHost}`)}><Copy size={15} /> Kopiuj</button>
-              <button type="button" onClick={() => setCreatedPortalHost("")} aria-label="Zamknij"><X size={15} /></button>
+            <div className={`${styles.success} ${styles.portalSuccess}`} role="status">
+              <span><strong>Organizacja jest gotowa</strong><small>Przekaż klientowi jego bezpieczny adres logowania.</small></span>
+              <a href={`https://${createdPortalHost}`} target="_blank" rel="noreferrer">https://{createdPortalHost}</a>
+              <button type="button" onClick={() => void navigator.clipboard.writeText(`https://${createdPortalHost}`)}><Copy size={16} /> Kopiuj adres</button>
+              <button type="button" onClick={() => setCreatedPortalHost("")} aria-label="Zamknij"><X size={17} /></button>
             </div>
           ) : null}
 
