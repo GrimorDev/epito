@@ -4,6 +4,7 @@ import path from "node:path";
 import { NextRequest, NextResponse } from "next/server";
 import { getSession, isSameOrigin } from "@/lib/server/auth";
 import { withTenantTransaction } from "@/lib/server/database";
+import { canEditTenantData } from "@/lib/platform-access";
 import { enqueueInvoiceIssue } from "@/lib/server/queues";
 import { buildFa3InvoiceXml, computeInvoiceTotals, type InvoiceLineInput, type InvoiceVatRate } from "@/lib/server/invoice-fa3";
 
@@ -11,7 +12,7 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 function canIssue(role: string | null, platformRole: string) {
-  return platformRole === "supervisor" || ["owner", "admin", "accountant", "employee"].includes(role || "");
+  return canEditTenantData(platformRole) || ["owner", "admin", "accountant", "employee"].includes(role || "");
 }
 
 function uploadsRoot() {

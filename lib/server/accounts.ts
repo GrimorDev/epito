@@ -1,10 +1,11 @@
 import { getPool, withUserTransaction } from "./database";
+import type { PlatformRole } from "../platform-access";
 
 export type LoginIdentity = {
   userId: string;
   email: string;
   fullName: string;
-  platformRole: "none" | "support" | "supervisor";
+  platformRole: PlatformRole;
   passwordHash: string;
 };
 

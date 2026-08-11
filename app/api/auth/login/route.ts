@@ -11,6 +11,8 @@ import {
 } from "@/lib/server/auth";
 import { verifyPassword } from "@/lib/server/passwords";
 import { consumeRateLimit } from "@/lib/server/security-store";
+import { isPlatformStaff } from "@/lib/platform-access";
+import { withUserTransaction } from "@/lib/server/database";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -51,6 +53,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Nieprawidłowy e-mail lub hasło." }, { status: 401 });
   }
 
+  await withUserTransaction(identity.userId, (client) =>
+    client.query("update users set last_login_at = now(), updated_at = now() where id = $1", [identity.userId]),
+  );
+
   const memberships = await listUserMemberships(identity.userId);
 
   // Each tenant gets its own portal subdomain (client2393.epito.pl) and a
@@ -70,7 +76,7 @@ export async function POST(request: NextRequest) {
     ? memberships.find((membership) => membership.tenantSlug === hostSlug) ?? null
     : null;
 
-  if (identity.platformRole !== "supervisor") {
+  if (!isPlatformStaff(identity.platformRole)) {
     if (!memberships.length) {
       return NextResponse.json({ error: "Konto nie ma dostępu do żadnej organizacji." }, { status: 403 });
     }
@@ -94,7 +100,7 @@ export async function POST(request: NextRequest) {
 
   const response = NextResponse.json({
     ok: true,
-    redirectTo: identity.platformRole === "supervisor" ? "/admin" : "/workspace",
+    redirectTo: isPlatformStaff(identity.platformRole) ? "/admin" : "/workspace",
   });
   setSessionCookie(response, request, token);
   return response;
