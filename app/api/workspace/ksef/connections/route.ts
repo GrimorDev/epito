@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession, isSameOrigin } from "@/lib/server/auth";
 import { withTenantTransaction } from "@/lib/server/database";
+import { canEditTenantData } from "@/lib/platform-access";
 import { encryptSecret } from "@/lib/server/crypto-secrets";
 import type { KsefEnvironment } from "@/lib/server/ksef/client";
 import { scheduleKsefSync, unscheduleKsefSync } from "@/lib/server/queues";
@@ -11,7 +12,7 @@ export const runtime = "nodejs";
 const ENVIRONMENTS = new Set<KsefEnvironment>(["test", "demo", "production"]);
 
 function canManageConnections(role: string | null, platformRole: string) {
-  return platformRole === "supervisor" || role === "owner" || role === "admin";
+  return canEditTenantData(platformRole) || role === "owner" || role === "admin";
 }
 
 export async function GET(request: NextRequest) {

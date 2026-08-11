@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { ChangeEvent, CSSProperties, useCallback, useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { DocumentImportModal, DocumentsWorkspace, IssueInvoiceModal, SettingsWorkspace, TeamWorkspace, type WorkspaceDocument } from "./workspace-sections";
+import { isPlatformStaff, platformRoleLabels, type PlatformRole } from "@/lib/platform-access";
 import {
   ArrowLeft,
   ArrowRight,
@@ -25,6 +26,7 @@ import {
   Phone,
   Send,
   Settings,
+  ShieldCheck,
   Sun,
   TrendingDown,
   TrendingUp,
@@ -49,7 +51,7 @@ type PortalMode = "demo" | "production";
 type PortalSession = {
   fullName: string;
   email: string;
-  platformRole: "none" | "support" | "supervisor";
+  platformRole: PlatformRole;
   membershipRole: "owner" | "admin" | "accountant" | "employee" | "viewer" | null;
 };
 type PortalOverview = {
@@ -245,7 +247,8 @@ export function ClientPortal({ mode }: { mode: PortalMode }) {
 
   const duePayments = payments.filter((payment) => payment.status !== "paid");
   const nextPayment = duePayments[0];
-  const canAccessOffice = session?.platformRole === "supervisor" || ["owner", "admin", "accountant"].includes(session?.membershipRole || "");
+  const platformOperator = isPlatformStaff(session?.platformRole);
+  const canAccessOffice = platformOperator || ["owner", "admin", "accountant"].includes(session?.membershipRole || "");
   const actionDocumentsList = documents.filter((document) => document.statusCode ? document.statusCode !== "verified" : document.status !== "Przetworzone");
   const newDuePayments = duePayments.filter((payment) => !seenNotificationIds.payments.includes(String(payment.id)));
   const newActionDocuments = actionDocumentsList.filter((document) => !seenNotificationIds.documents.includes(String(document.id)));
@@ -405,6 +408,7 @@ export function ClientPortal({ mode }: { mode: PortalMode }) {
       {mobileMenu && <button className="sidebar-backdrop" aria-label="Zamknij menu" onClick={() => setMobileMenu(false)} />}
 
       <section className="portal-main">
+        {production && platformOperator ? <div className="operator-access-banner"><span><ShieldCheck size={18} /><strong>Dostęp techniczny</strong><small>{platformRoleLabels[session!.platformRole]} przegląda organizację {companyName}. Wejście jest zapisane w dzienniku audytowym.</small></span><button type="button" onClick={() => router.push("/admin")}><ArrowLeft size={17} /> Wróć do panelu platformy</button></div> : null}
         <header className="portal-topbar">
           <button className="mobile-sidebar-button" onClick={() => setMobileMenu(true)} aria-label="Otwórz menu"><Menu size={24} /></button>
           <div className="company-switcher" aria-label="Aktywna firma">
@@ -456,7 +460,7 @@ export function ClientPortal({ mode }: { mode: PortalMode }) {
                 <ChevronDown size={18} />
               </button>
               <AnimatePresence>
-                {profileOpen ? <motion.div className="profile-popover" initial={{ opacity: 0, y: 8, scale: .98 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 6, scale: .98 }}><div><strong>{userName}</strong><small>{session?.email || "konto demonstracyjne"}</small></div><button onClick={() => { setProfileOpen(false); selectSection("Ustawienia"); }}><Settings size={17} /> Ustawienia konta</button>{production && canAccessOffice ? <button onClick={() => { setProfileOpen(false); router.push("/office"); }}><Building2 size={17} /> Zaplecze biura</button> : null}{production ? <button onClick={logout}><ArrowLeft size={17} /> Wyloguj się</button> : <Link href="/"><ArrowLeft size={17} /> Strona główna</Link>}</motion.div> : null}
+                {profileOpen ? <motion.div className="profile-popover" initial={{ opacity: 0, y: 8, scale: .98 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 6, scale: .98 }}><div><strong>{userName}</strong><small>{session?.email || "konto demonstracyjne"}</small></div><button onClick={() => { setProfileOpen(false); selectSection("Ustawienia"); }}><Settings size={17} /> Ustawienia konta</button>{production && canAccessOffice ? <button onClick={() => { setProfileOpen(false); router.push(platformOperator ? "/admin" : "/office"); }}><Building2 size={17} /> {platformOperator ? "Panel platformy" : "Zaplecze biura"}</button> : null}{production ? <button onClick={logout}><ArrowLeft size={17} /> Wyloguj się</button> : <Link href="/"><ArrowLeft size={17} /> Strona główna</Link>}</motion.div> : null}
               </AnimatePresence>
             </div>
           </div>

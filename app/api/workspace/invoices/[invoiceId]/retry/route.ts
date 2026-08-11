@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession, isSameOrigin } from "@/lib/server/auth";
 import { withTenantTransaction } from "@/lib/server/database";
+import { canEditTenantData } from "@/lib/platform-access";
 import { enqueueInvoiceIssue } from "@/lib/server/queues";
 
 export const dynamic = "force-dynamic";
@@ -9,7 +10,7 @@ export const runtime = "nodejs";
 type Context = { params: Promise<{ invoiceId: string }> };
 
 function canIssue(role: string | null, platformRole: string) {
-  return platformRole === "supervisor" || ["owner", "admin", "accountant", "employee"].includes(role || "");
+  return canEditTenantData(platformRole) || ["owner", "admin", "accountant", "employee"].includes(role || "");
 }
 
 // Re-submits the SAME invoice_number/invoice_xml already stored on the row

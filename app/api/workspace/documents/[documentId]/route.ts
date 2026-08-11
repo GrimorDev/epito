@@ -7,6 +7,7 @@ import { enqueueBackgroundJob } from "@/lib/server/queues";
 import { parseInvoiceDetails } from "@/lib/server/ksef/client";
 import { escapeHtml, renderInvoiceHtml } from "@/lib/server/invoice-html";
 import { renderHtmlToPdf } from "@/lib/server/pdf";
+import { canEditTenantData } from "@/lib/platform-access";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -18,7 +19,7 @@ function uploadsRoot() {
 }
 
 function canEdit(role: string | null, platformRole: string) {
-  return platformRole === "supervisor" || ["owner", "admin", "accountant", "employee"].includes(role || "");
+  return canEditTenantData(platformRole) || ["owner", "admin", "accountant", "employee"].includes(role || "");
 }
 
 export async function GET(request: NextRequest, context: Context) {

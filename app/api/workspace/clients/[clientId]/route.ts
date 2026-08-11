@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession, isSameOrigin } from "@/lib/server/auth";
 import { withTenantTransaction } from "@/lib/server/database";
+import { canEditTenantData } from "@/lib/platform-access";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -8,7 +9,7 @@ export const runtime = "nodejs";
 type Context = { params: Promise<{ clientId: string }> };
 
 const canManageClient = (role: string | null, platformRole: string) =>
-  platformRole === "supervisor" || role === "owner" || role === "admin" || role === "accountant";
+  canEditTenantData(platformRole) || role === "owner" || role === "admin" || role === "accountant";
 
 export async function PATCH(request: NextRequest, context: Context) {
   if (!isSameOrigin(request)) return NextResponse.json({ error: "Nieprawidłowe źródło żądania." }, { status: 403 });

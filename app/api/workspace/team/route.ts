@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSession, isSameOrigin } from "@/lib/server/auth";
 import { withTenantTransaction } from "@/lib/server/database";
 import { hashPassword, validatePassword } from "@/lib/server/passwords";
+import { canEditTenantData } from "@/lib/platform-access";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -12,7 +13,7 @@ const roles = new Set(["admin", "accountant", "employee", "viewer"]);
 export async function PATCH(request: NextRequest) {
   if (!isSameOrigin(request)) return NextResponse.json({ error: "Nieprawidłowe źródło żądania." }, { status: 403 });
   const session = await getSession(request);
-  const canManageTeam = session?.platformRole === "supervisor" || session?.membershipRole === "owner" || session?.membershipRole === "admin";
+  const canManageTeam = canEditTenantData(session?.platformRole) || session?.membershipRole === "owner" || session?.membershipRole === "admin";
   if (!session?.tenantId || !canManageTeam) return NextResponse.json({ error: "Brak uprawnień." }, { status: 403 });
   const body = (await request.json().catch(() => null)) as { userId?: unknown; role?: unknown } | null;
   const userId = typeof body?.userId === "string" ? body.userId : "";
@@ -42,7 +43,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Nieprawidłowe źródło żądania." }, { status: 403 });
   }
   const session = await getSession(request);
-  const canManageTeam = session?.platformRole === "supervisor" || session?.membershipRole === "owner" || session?.membershipRole === "admin";
+  const canManageTeam = canEditTenantData(session?.platformRole) || session?.membershipRole === "owner" || session?.membershipRole === "admin";
   if (!session?.tenantId || !canManageTeam) {
     return NextResponse.json({ error: "Brak uprawnień." }, { status: 403 });
   }

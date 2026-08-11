@@ -1928,6 +1928,29 @@ button, a, input, select, textarea, summary {
   box-shadow: 0 1px 0 rgba(23, 54, 48, .04);
 }
 .theme-dark .portal-topbar { background: rgba(17, 28, 26, .9); }
+.operator-access-banner {
+  min-height: 58px;
+  padding: 10px clamp(18px, 3vw, 42px);
+  border-bottom: 1px solid #2d4161;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  background: #111a28;
+  color: #dbe6f8;
+}
+.operator-access-banner > span { min-width: 0; display: flex; align-items: center; gap: 9px; }
+.operator-access-banner > span > svg { flex: 0 0 auto; color: #6e96ff; }
+.operator-access-banner strong { flex: 0 0 auto; font-size: 13px; }
+.operator-access-banner small { overflow: hidden; color: #98a8c0; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.operator-access-banner button { min-height: 36px; padding: 0 12px; border: 1px solid #344966; border-radius: 8px; display: inline-flex; align-items: center; gap: 7px; background: #172438; color: #e3ebf8; font: inherit; font-size: 12px; font-weight: 720; white-space: nowrap; cursor: pointer; }
+.operator-access-banner button:hover { border-color: #6e96ff; }
+@media (max-width: 760px) {
+  .operator-access-banner { align-items: flex-start; flex-direction: column; }
+  .operator-access-banner > span { align-items: flex-start; flex-wrap: wrap; }
+  .operator-access-banner small { width: 100%; white-space: normal; }
+  .operator-access-banner button { width: 100%; justify-content: center; }
+}
 .portal-sidebar { box-shadow: 1px 0 0 rgba(255, 255, 255, .04); }
 .panel-card,
 .summary-grid article,
