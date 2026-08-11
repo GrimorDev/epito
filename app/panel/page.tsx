@@ -97,6 +97,19 @@ function formatDocumentMoney(amount: string, currency: string) {
   return new Intl.NumberFormat("pl-PL", { style: "currency", currency }).format(Number(amount));
 }
 
+// A tenant's own subdomain (client2393.epito.pl) redirects "/" straight to
+// /logowanie (see proxy.ts) — a plain relative "/#faq" link from inside the
+// dashboard would just bounce back to the login screen instead of reaching
+// the marketing site's FAQ. Strip the tenant label so the link points at the
+// shared base domain instead. Falls back to a relative link when there's no
+// subdomain to strip (demo/local/base-domain access).
+function marketingFaqUrl(): string {
+  if (typeof window === "undefined") return "/#faq";
+  const labels = window.location.hostname.split(".");
+  if (labels.length <= 2) return "/#faq";
+  return `${window.location.protocol}//${labels.slice(1).join(".")}/#faq`;
+}
+
 function documentType(mimeType: string, name: string) {
   if (mimeType === "application/pdf") return "PDF";
   if (mimeType === "text/csv") return "CSV";
@@ -382,8 +395,8 @@ export function ClientPortal({ mode }: { mode: PortalMode }) {
         <div className="sidebar-help">
           <CircleHelp size={24} />
           <strong>Potrzebujesz pomocy?</strong>
-          <p>{production ? "Zarządzaj firmami i rozliczeniami w zapleczu organizacji." : "Twój opiekun odpowie na pytania dotyczące rozliczeń."}</p>
-          <button onClick={() => production ? router.push("/office") : selectSection("Wiadomości")}>{production ? "Otwórz zaplecze" : "Napisz wiadomość"}</button>
+          <p>{production ? "Odpowiedzi na najczęstsze pytania o Epito." : "Twój opiekun odpowie na pytania dotyczące rozliczeń."}</p>
+          {production ? <a href={marketingFaqUrl()} target="_blank" rel="noreferrer">Zobacz FAQ</a> : <button onClick={() => selectSection("Wiadomości")}>Napisz wiadomość</button>}
         </div>
         {production ? <button className="back-to-site" type="button" onClick={logout}><ArrowLeft size={16} /> Wyloguj się</button> : <Link className="back-to-site" href="/"><ArrowLeft size={16} /> Strona Epito</Link>}
       </aside>
@@ -536,7 +549,7 @@ export function ClientPortal({ mode }: { mode: PortalMode }) {
                     <div className="advisor-avatar">{production ? initials(companyName) : "AK"}</div>
                     <div><small>{production ? "TWOJA ORGANIZACJA" : "TWÓJ OPIEKUN"}</small><h3>{production ? companyName : "Anna Kowalska"} <span className="availability">Aktywna</span></h3><p>{production ? legalName : "Poniedziałek do piątku, od 8:00 do 16:00."}</p></div>
                     <button onClick={() => production ? router.push("/office") : selectSection("Wiadomości")}><MessageSquareText size={17} /> {production ? "Zarządzaj danymi" : "Napisz wiadomość"}</button>
-                    <div className="advisor-phone"><small>{production ? "NIP" : "TELEFON"}</small><strong><Phone size={14} /> {production ? overview?.tenant.nip || "Nie podano" : "+48 22 123 45 67"}</strong></div>
+                    <div className="advisor-phone"><small>{production ? "NIP" : "TELEFON"}</small><strong>{production ? null : <Phone size={14} />} {production ? overview?.tenant.nip || "Nie podano" : "+48 22 123 45 67"}</strong></div>
                   </section>
                 </>
               )}
