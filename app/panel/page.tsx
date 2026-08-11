@@ -547,7 +547,7 @@ export function ClientPortal({ mode }: { mode: PortalMode }) {
                   <section className="advisor-banner">
                     <div className="advisor-avatar">{production ? initials(companyName) : "AK"}</div>
                     <div><small>{production ? "TWOJA ORGANIZACJA" : "TWÓJ OPIEKUN"}</small><h3>{production ? companyName : "Anna Kowalska"} <span className="availability">Aktywna</span></h3><p>{production ? legalName : "Poniedziałek do piątku, od 8:00 do 16:00."}</p></div>
-                    <button onClick={() => production ? (canAccessOffice ? router.push("/office") : selectSection("Ustawienia")) : selectSection("Wiadomości")}><MessageSquareText size={17} /> {production ? (canAccessOffice ? "Zarządzaj danymi" : "Ustawienia organizacji") : "Napisz wiadomość"}</button>
+                    <button onClick={() => production ? (canAccessOffice ? router.push(platformOperator ? "/admin" : "/office") : selectSection("Ustawienia")) : selectSection("Wiadomości")}><MessageSquareText size={17} /> {production ? (canAccessOffice ? "Zarządzaj danymi" : "Ustawienia organizacji") : "Napisz wiadomość"}</button>
                     <div className="advisor-phone"><small>{production ? "NIP" : "TELEFON"}</small><strong>{production ? null : <Phone size={14} />} {production ? overview?.tenant.nip || "Nie podano" : "+48 22 123 45 67"}</strong></div>
                   </section>
                 </>
