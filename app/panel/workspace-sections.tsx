@@ -409,7 +409,7 @@ export function DocumentImportModal({
   onClose: () => void;
   onImported: (message: string) => void;
 }) {
-  const [mode, setMode] = useState<"single" | "jpk_fa">("single");
+  const [mode, setMode] = useState<"single" | "jpk_fa" | "bank_statement">("single");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
 
@@ -417,16 +417,25 @@ export function DocumentImportModal({
     event.preventDefault();
     setPending(true);
     setError("");
-    const endpoint = mode === "jpk_fa" ? "/api/workspace/documents/jpk-fa" : "/api/workspace/documents";
+    const endpoint =
+      mode === "jpk_fa" ? "/api/workspace/documents/jpk-fa"
+      : mode === "bank_statement" ? "/api/workspace/documents/bank-statement"
+      : "/api/workspace/documents";
     try {
       const response = await fetch(endpoint, { method: "POST", body: new FormData(event.currentTarget) });
-      const payload = (await response.json()) as { error?: string; imported?: number; skipped?: number };
+      const payload = (await response.json()) as { error?: string; imported?: number; skipped?: number; matched?: number; ambiguous?: number; unmatched?: number };
       if (!response.ok) throw new Error(payload.error || "Nie udało się przesłać pliku.");
-      onImported(
-        mode === "jpk_fa"
-          ? `Faktury zostały zaimportowane: ${payload.imported ?? 0}${payload.skipped ? ` (pominięto ${payload.skipped} już istniejących)` : ""}.`
-          : "Dokument został zapisany. Trwa odczyt kwoty i danych faktury.",
-      );
+      if (mode === "jpk_fa") {
+        onImported(`Faktury zostały zaimportowane: ${payload.imported ?? 0}${payload.skipped ? ` (pominięto ${payload.skipped} już istniejących)` : ""}.`);
+      } else if (mode === "bank_statement") {
+        const extra = [
+          payload.ambiguous ? `${payload.ambiguous} wymaga potwierdzenia (niezgodna kwota)` : "",
+          payload.unmatched ? `${payload.unmatched} nierozpoznanych` : "",
+        ].filter(Boolean).join(", ");
+        onImported(`Rozpoznano automatycznie ${payload.matched ?? 0} z ${payload.imported ?? 0} wpłat${extra ? ` — ${extra}.` : "."}`);
+      } else {
+        onImported("Dokument został zapisany. Trwa odczyt kwoty i danych faktury.");
+      }
       onClose();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Nie udało się przesłać pliku.");
@@ -445,6 +454,7 @@ export function DocumentImportModal({
           <div className="import-mode-toggle">
             <button type="button" className={mode === "single" ? "active" : ""} onClick={() => setMode("single")}>Zwykły dokument</button>
             <button type="button" className={mode === "jpk_fa" ? "active" : ""} onClick={() => setMode("jpk_fa")}>Import JPK_FA</button>
+            <button type="button" className={mode === "bank_statement" ? "active" : ""} onClick={() => setMode("bank_statement")}>Wyciąg bankowy (MT940)</button>
           </div>
           <label>
             Klient
@@ -455,13 +465,15 @@ export function DocumentImportModal({
           </label>
           {mode === "single" ? (
             <label>Plik (PDF, JPG, PNG, CSV, XML)<input name="file" type="file" accept=".pdf,.jpg,.jpeg,.png,.csv,.xml" required /></label>
-          ) : (
+          ) : mode === "jpk_fa" ? (
             <label>Plik JPK_FA (XML) — z Comarch, Insert, Symfonii lub innego programu księgowego<input name="file" type="file" accept=".xml,text/xml,application/xml" required /></label>
+          ) : (
+            <label>Plik wyciągu bankowego w formacie MT940 (.sta/.940/.txt) — płatności zostaną automatycznie dopasowane do wystawionych faktur<input name="file" type="file" accept=".sta,.940,.txt,text/plain" required /></label>
           )}
           {error ? <p className="form-error">{error}</p> : null}
           {!companies.length ? <p className="form-error">Najpierw dodaj klienta w zakładce Klienci.</p> : null}
           <button className="button button-primary button-wide" type="submit" disabled={pending || !companies.length}>
-            {pending ? "Wysyłanie…" : mode === "jpk_fa" ? "Zaimportuj" : "Dodaj dokument"}
+            {pending ? "Wysyłanie…" : mode === "jpk_fa" || mode === "bank_statement" ? "Zaimportuj" : "Dodaj dokument"}
           </button>
         </motion.form>
       </motion.div>

@@ -392,6 +392,10 @@ button { color: inherit; }
 .payment-modal fieldset b { font-size: 10px; }.payment-modal fieldset span { color: #899793; font-size: 8px; margin-top: 3px; }
 .blik-field { display: grid; gap: 7px; font-size: 9px; font-weight: 800; }
 .blik-field input { border: 1px solid #dce3dc; border-radius: 7px; padding: 12px; letter-spacing: .3em; outline: none; }
+.payment-reference-block { background: #f2f6ee; border-radius: 9px; padding: 12px 17px; margin-top: 10px; display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.payment-reference-block small { display: block; color: #7e8e8a; font-size: 8px; }
+.payment-reference-block strong { font-size: 13px; letter-spacing: .03em; margin-top: 2px; display: block; }
+.payment-reference-block .copy-reference { border: 1px solid #cdd8ca; background: #fff; border-radius: 6px; padding: 6px 10px; font-size: 8px; font-weight: 800; cursor: pointer; flex-shrink: 0; }
 .demo-notice { background: #fff7de; color: #8a672f; border-radius: 7px; padding: 10px; font-size: 8px; line-height: 1.5; margin: 15px 0; }
 .modal-pay { border: 0; }
 .modal-pay:disabled { opacity: .7; cursor: wait; transform: none; }
@@ -738,6 +742,8 @@ button { color: inherit; }
 .modal-amount small { font-size: 11px; }
 .modal-amount strong { margin-top: 6px; font-size: 31px; }
 .modal-amount span { font-size: 11px; }
+.payment-reference-block { border-radius: 11px; padding: 14px 21px; }
+.payment-reference-block strong { font-size: 15px; }
 .payment-modal fieldset { margin: 23px 0 16px; gap: 12px; }
 .payment-modal legend { margin-bottom: 11px; font-size: 12px; }
 .payment-modal fieldset label { min-height: 70px; border-radius: 9px; padding: 12px; }
@@ -822,6 +828,8 @@ button { color: inherit; }
 .theme-dark .chat-card footer input,
 .theme-dark .blik-field input { background: #0f1817; color: #e8efec; border-color: #344440; }
 .theme-dark .modal-amount { background: #182522; }
+.theme-dark .payment-reference-block { background: #182522; }
+.theme-dark .payment-reference-block .copy-reference { background: #0f1817; color: #e8efec; border-color: #344440; }
 .theme-dark .payment-modal fieldset label { border-color: #344440; }
 .theme-dark .payment-modal fieldset label.selected { background: #1c2d24; border-color: #90b95b; }
 .theme-dark .demo-notice { background: #392f1b; color: #e7c77e; }

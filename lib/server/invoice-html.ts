@@ -24,7 +24,7 @@ function formatDate(value: string | null): string {
   return date.toLocaleDateString("pl-PL");
 }
 
-export function renderInvoiceHtml(details: InvoiceDetails, ksefNumber: string | null): string {
+export function renderInvoiceHtml(details: InvoiceDetails, ksefNumber: string | null, paymentReference?: string | null): string {
   const currency = details.currency || "PLN";
   const linesRows = details.lines.length
     ? details.lines
@@ -109,6 +109,7 @@ export function renderInvoiceHtml(details: InvoiceDetails, ksefNumber: string | 
     </table>
   </div>
 
+  ${paymentReference ? `<div class="footer"><strong>Numer referencyjny płatności: ${escapeHtml(paymentReference)}</strong> — prosimy podać w tytule przelewu, aby płatność została rozpoznana automatycznie.</div>` : ""}
   <div class="footer">Dokument odtworzony z ustrukturyzowanej faktury XML pobranej z Krajowego Systemu e-Faktur.</div>
 </body>
 </html>`;

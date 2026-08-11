@@ -27,8 +27,17 @@ export async function GET(request: NextRequest, context: Context) {
   if (!session?.tenantId) return NextResponse.json({ error: "Zaloguj się ponownie." }, { status: 401 });
   const { documentId } = await context.params;
   const document = await withTenantTransaction(session.tenantId, session.userId, async (client) => {
-    const result = await client.query<{ name: string; storage_key: string; mime_type: string; ksef_number: string | null }>(
-      "select name, storage_key, mime_type, ksef_number from documents where id = $1 and deleted_at is null",
+    const result = await client.query<{
+      name: string;
+      storage_key: string;
+      mime_type: string;
+      ksef_number: string | null;
+      payment_reference: string | null;
+    }>(
+      `select document.name, document.storage_key, document.mime_type, document.ksef_number, payment.payment_reference
+       from documents document
+       left join payments payment on payment.document_id = document.id and payment.metadata->>'source' = 'issued_invoice'
+       where document.id = $1 and document.deleted_at is null`,
       [documentId],
     );
     return result.rows[0] || null;
@@ -48,7 +57,7 @@ export async function GET(request: NextRequest, context: Context) {
     if (isXml && (disposition === "inline" || wantsPdf)) {
       let html: string;
       try {
-        html = renderInvoiceHtml(parseInvoiceDetails(rawContents.toString("utf8")), document.ksef_number);
+        html = renderInvoiceHtml(parseInvoiceDetails(rawContents.toString("utf8")), document.ksef_number, document.payment_reference);
       } catch {
         html = `<!doctype html><meta charset="utf-8"><pre style="white-space:pre-wrap;font-family:monospace;">${escapeHtml(rawContents.toString("utf8"))}</pre>`;
       }

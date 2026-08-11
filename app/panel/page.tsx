@@ -45,6 +45,8 @@ type Payment = {
   amount: number;
   due: string;
   status: "due" | "paid" | "scheduled";
+  reference?: string | null;
+  isReceivable?: boolean;
 };
 
 type PortalMode = "demo" | "production";
@@ -59,8 +61,9 @@ type PortalOverview = {
   companies: Array<{ id: string; name: string }>;
   team: Array<{ id: string; email: string; full_name: string; role: string; status: string }>;
   documents: Array<{ id: string; name: string; category: string; status: string; document_year: number; document_month: number; amount: string | null; currency: string; issued_at: string | null; mime_type: string; file_size: number; structured_data: { analysis?: WorkspaceDocument["analysis"]; manual_override?: Record<string, unknown> }; company_name: string; created_at: string; issued_invoice_id: string | null; issued_invoice_status: string | null; issued_invoice_error: string | null }>;
-  payments: Array<{ id: string; tax_type: string; period_label: string; amount: string; currency: string; due_date: string; status: string; company_name: string; created_at: string }>;
+  payments: Array<{ id: string; tax_type: string; period_label: string; amount: string; currency: string; due_date: string; status: string; company_name: string; created_at: string; payment_reference: string | null; payment_source: string | null }>;
   stats: { clients_count: number; documents_count: number; payments_due_count: number; payments_due_total: string };
+  bankTransactions: Array<{ id: string; client_company_id: string; company_name: string; value_date: string; amount: string; currency: string; description: string; match_status: string; matched_payment_id: string | null }>;
 };
 
 const monthNames = ["Styczeń", "Luty", "Marzec", "Kwiecień", "Maj", "Czerwiec", "Lipiec", "Sierpień", "Wrzesień", "Październik", "Listopad", "Grudzień"];
@@ -153,6 +156,8 @@ export function ClientPortal({ mode }: { mode: PortalMode }) {
   const [paymentMethod, setPaymentMethod] = useState("blik");
   const [paying, setPaying] = useState(false);
   const [paymentSuccess, setPaymentSuccess] = useState(false);
+  const [matchDrafts, setMatchDrafts] = useState<Record<string, string>>({});
+  const [matchingId, setMatchingId] = useState<string | null>(null);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [seenNotificationIds, setSeenNotificationIds] = useState<{ payments: string[]; documents: string[] }>(() => {
     if (typeof window === "undefined") return { payments: [], documents: [] };
@@ -193,6 +198,8 @@ export function ClientPortal({ mode }: { mode: PortalMode }) {
       amount: Number(payment.amount),
       due: formatDate(payment.due_date),
       status: payment.status === "paid" ? "paid" : payment.status === "scheduled" ? "scheduled" : "due",
+      reference: payment.payment_reference,
+      isReceivable: payment.payment_source === "issued_invoice",
     })));
     setDocuments(overviewPayload.documents.map((document) => ({
       id: document.id,
@@ -309,6 +316,56 @@ export function ClientPortal({ mode }: { mode: PortalMode }) {
     setModalPayment(null);
     setPaymentSuccess(false);
     setPaying(false);
+  }
+
+  async function markPaymentPaid() {
+    if (!modalPayment) return;
+    setPaying(true);
+    try {
+      const response = await fetch(`/api/workspace/payments/${modalPayment.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "paid" }),
+      });
+      const payload = (await response.json()) as { error?: string };
+      if (!response.ok) throw new Error(payload.error || "Nie udało się oznaczyć płatności jako opłaconej.");
+      await loadProductionData();
+      setPaymentSuccess(true);
+    } catch (reason) {
+      setPortalNotice(reason instanceof Error ? reason.message : "Nie udało się oznaczyć płatności jako opłaconej.");
+    } finally {
+      setPaying(false);
+    }
+  }
+
+  async function copyPaymentReference(reference: string) {
+    try {
+      await navigator.clipboard.writeText(reference);
+      setPortalNotice("Numer referencyjny skopiowany do schowka.");
+    } catch {
+      setPortalNotice(reference);
+    }
+  }
+
+  async function matchTransactionManually(transactionId: string) {
+    const paymentId = matchDrafts[transactionId];
+    if (!paymentId) return;
+    setMatchingId(transactionId);
+    try {
+      const response = await fetch(`/api/workspace/payments/${paymentId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "paid", matchTransactionId: transactionId }),
+      });
+      const payload = (await response.json()) as { error?: string };
+      if (!response.ok) throw new Error(payload.error || "Nie udało się dopasować transakcji.");
+      await loadProductionData();
+      setPortalNotice("Transakcja została dopasowana do płatności.");
+    } catch (reason) {
+      setPortalNotice(reason instanceof Error ? reason.message : "Nie udało się dopasować transakcji.");
+    } finally {
+      setMatchingId(null);
+    }
   }
 
   async function uploadDocument(event: ChangeEvent<HTMLInputElement>) {
@@ -576,6 +633,29 @@ export function ClientPortal({ mode }: { mode: PortalMode }) {
                       {payments.length === 0 ? <div className="portal-empty-row">Nie ma jeszcze płatności do wyświetlenia.</div> : null}
                     </div>
                   </div>
+
+                  {production && canAccessOffice && overview?.bankTransactions?.length ? (
+                    <div className="panel-card payments-table-card">
+                      <div className="panel-card-heading"><div><h3>Nierozpoznane transakcje</h3><p>Wpłaty z zaimportowanego wyciągu bankowego, których nie udało się dopasować automatycznie.</p></div></div>
+                      <div className="full-payment-list unmatched-transactions">
+                        {overview.bankTransactions.map((transaction) => {
+                          const candidates = overview.payments.filter((payment) => payment.status === "due" && payment.payment_source === "issued_invoice" && payment.company_name === transaction.company_name);
+                          return (
+                            <div key={transaction.id}>
+                              <span className={`payment-type ${transaction.match_status}`}>{transaction.match_status === "ambiguous" ? "Niezgodna kwota" : "Nierozpoznana"}</span>
+                              <div><strong>{transaction.company_name}</strong><small title={transaction.description}>{transaction.description.slice(0, 70)}{transaction.description.length > 70 ? "…" : ""}</small></div>
+                              <strong>{formatMoney(Number(transaction.amount))}</strong>
+                              <select value={matchDrafts[transaction.id] || ""} onChange={(event) => setMatchDrafts((current) => ({ ...current, [transaction.id]: event.target.value }))}>
+                                <option value="" disabled>Dopasuj do faktury</option>
+                                {candidates.map((payment) => <option key={payment.id} value={payment.id}>{payment.period_label} · {formatMoney(Number(payment.amount))}</option>)}
+                              </select>
+                              <button className="small-pay" disabled={!matchDrafts[transaction.id] || matchingId === transaction.id} onClick={() => void matchTransactionManually(transaction.id)}>{matchingId === transaction.id ? "Zapisywanie" : "Dopasuj"}</button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ) : null}
                 </section>
               )}
 
@@ -616,12 +696,18 @@ export function ClientPortal({ mode }: { mode: PortalMode }) {
             <motion.div className="payment-modal" initial={{ opacity: 0, scale: 0.96, y: 16 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.97, y: 10 }} transition={{ duration: 0.2 }}>
               <button className="modal-close" onClick={closeModal} aria-label="Zamknij"><X size={24} /></button>
               {paymentSuccess ? (
-                <div className="payment-success"><span><Check size={30} /></span><h2>Płatność przyjęta</h2><p>Status został zaktualizowany. To demonstracja, więc żadne środki nie zostały pobrane.</p><button className="button button-dark button-wide" onClick={closeModal}>Wróć do panelu</button></div>
+                <div className="payment-success"><span><Check size={30} /></span><h2>Płatność przyjęta</h2><p>{production ? "Status płatności został zaktualizowany na opłacony." : "Status został zaktualizowany. To demonstracja, więc żadne środki nie zostały pobrane."}</p><button className="button button-dark button-wide" onClick={closeModal}>Wróć do panelu</button></div>
               ) : (
                 <>
                   <span className="modal-kicker">{production ? "SZCZEGÓŁY PŁATNOŚCI" : "PŁATNOŚĆ DEMONSTRACYJNA"}</span>
                   <h2>{modalPayment.type}, {modalPayment.period}</h2>
                   <div className="modal-amount"><small>Kwota do zapłaty</small><strong>{formatMoney(modalPayment.amount)}</strong><span>Termin {modalPayment.due}</span></div>
+                  {production && modalPayment.reference ? (
+                    <div className="payment-reference-block">
+                      <div><small>Numer referencyjny płatności</small><strong>{modalPayment.reference}</strong></div>
+                      <button type="button" className="copy-reference" onClick={() => void copyPaymentReference(modalPayment.reference!)}>Kopiuj</button>
+                    </div>
+                  ) : null}
                   {!production ? <fieldset>
                     <legend>Wybierz metodę</legend>
                     <label className={paymentMethod === "blik" ? "selected" : ""}><input type="radio" name="method" value="blik" checked={paymentMethod === "blik"} onChange={() => setPaymentMethod("blik")} /><b>BLIK</b><span>Kod 6-cyfrowy</span></label>
@@ -629,7 +715,15 @@ export function ClientPortal({ mode }: { mode: PortalMode }) {
                   </fieldset> : null}
                   {!production && paymentMethod === "blik" && <label className="blik-field">Kod BLIK<input inputMode="numeric" maxLength={6} placeholder="Wpisz 6 cyfr" /></label>}
                   <div className="demo-notice"><CircleHelp size={17} /> {production ? "Płatności online zostaną uruchomione po podłączeniu operatora płatności. System nie oznaczy zobowiązania jako opłacone bez potwierdzenia." : "To jest interaktywny prototyp. Kliknięcie nie uruchamia prawdziwej płatności."}</div>
-                  {production ? <button className="button button-dark button-wide" onClick={closeModal}>Zamknij</button> : <button className="button button-primary button-wide modal-pay" onClick={confirmPayment} disabled={paying}>{paying ? "Przetwarzanie" : `Potwierdź ${formatMoney(modalPayment.amount)}`} <ArrowRight size={18} /></button>}
+                  {production ? (
+                    canAccessOffice ? (
+                      <button className="button button-primary button-wide modal-pay" onClick={() => void markPaymentPaid()} disabled={paying}>{paying ? "Zapisywanie" : "Oznacz jako zapłacone"} <ArrowRight size={18} /></button>
+                    ) : (
+                      <button className="button button-dark button-wide" onClick={closeModal}>Zamknij</button>
+                    )
+                  ) : (
+                    <button className="button button-primary button-wide modal-pay" onClick={confirmPayment} disabled={paying}>{paying ? "Przetwarzanie" : `Potwierdź ${formatMoney(modalPayment.amount)}`} <ArrowRight size={18} /></button>
+                  )}
                 </>
               )}
             </motion.div>
