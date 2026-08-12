@@ -1,4 +1,4 @@
-import { randomUUID, createHash } from "node:crypto";
+import { randomUUID, randomBytes, createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { Queue, Worker } from "bullmq";
@@ -92,6 +92,17 @@ const POLISH_MONTHS = ["styczeń", "luty", "marzec", "kwiecień", "maj", "czerwi
 function periodLabel(isoDate) {
   const date = isoDate ? new Date(`${isoDate}T00:00:00Z`) : new Date();
   return `${POLISH_MONTHS[date.getUTCMonth()]} ${date.getUTCFullYear()}`;
+}
+
+// Excludes 0/O/1/I so a client typing it into a bank transfer title by hand
+// can't confuse similar-looking characters.
+const PAYMENT_REFERENCE_ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
+
+function generatePaymentReference() {
+  const bytes = randomBytes(8);
+  let code = "";
+  for (const byte of bytes) code += PAYMENT_REFERENCE_ALPHABET[byte % PAYMENT_REFERENCE_ALPHABET.length];
+  return `EP-${code}`;
 }
 
 function yearMonthOf(isoDate) {
@@ -500,40 +511,55 @@ async function handleInvoiceIssue(job) {
         }
       }
 
-      await withTenant(tenantId, actorUserId, async (client) => {
-        await client.query(
-          `update issued_invoices set status = 'accepted', ksef_number = $1, upo_storage_key = $2, updated_at = now() where id = $3`,
-          [statusResult.ksefNumber, upoStorageKey, invoiceId],
-        );
-        if (invoiceRow.document_id) {
-          await client.query(
-            "update documents set status = 'verified', ksef_number = $1, updated_at = now() where id = $2",
-            [statusResult.ksefNumber, invoiceRow.document_id],
-          );
+      // payment_reference has a per-tenant unique index (0008_payment_reconciliation.sql).
+      // A collision is astronomically unlikely at 8 chars, but on one the
+      // whole transaction below rolls back (withTenant), so the retry regenerates
+      // the reference and redoes the full transaction rather than just the insert.
+      const MAX_REFERENCE_ATTEMPTS = 5;
+      for (let attempt = 1; attempt <= MAX_REFERENCE_ATTEMPTS; attempt += 1) {
+        const paymentReference = generatePaymentReference();
+        try {
+          await withTenant(tenantId, actorUserId, async (client) => {
+            await client.query(
+              `update issued_invoices set status = 'accepted', ksef_number = $1, upo_storage_key = $2, updated_at = now() where id = $3`,
+              [statusResult.ksefNumber, upoStorageKey, invoiceId],
+            );
+            if (invoiceRow.document_id) {
+              await client.query(
+                "update documents set status = 'verified', ksef_number = $1, updated_at = now() where id = $2",
+                [statusResult.ksefNumber, invoiceRow.document_id],
+              );
+            }
+            await client.query(
+              `insert into payments (tenant_id, client_company_id, document_id, tax_type, period_label, amount, currency, due_date, status, payment_reference, metadata)
+               values ($1, $2, $3, 'invoice', $4, $5, $6, $7, 'due', $8, $9::jsonb)`,
+              [
+                tenantId,
+                invoiceRow.client_company_id,
+                invoiceRow.document_id,
+                periodLabel(invoiceRow.issued_at),
+                invoiceRow.gross_total,
+                invoiceRow.currency,
+                invoiceRow.due_date || addDaysIso(invoiceRow.issued_at, 14),
+                paymentReference,
+                JSON.stringify({
+                  source: "issued_invoice",
+                  ksef_number: statusResult.ksefNumber,
+                  invoice_number: invoiceRow.invoice_number,
+                }),
+              ],
+            );
+            await client.query(
+              "insert into audit_log (tenant_id, actor_user_id, action, entity_type, entity_id, after_data) values ($1, $2, 'invoice.accepted', 'issued_invoice', $3, jsonb_build_object('ksef_number', $4::text))",
+              [tenantId, actorUserId, invoiceId, statusResult.ksefNumber],
+            );
+          });
+          break;
+        } catch (error) {
+          const isReferenceConflict = error?.code === "23505" && error?.constraint === "payments_reference_unique";
+          if (!isReferenceConflict || attempt === MAX_REFERENCE_ATTEMPTS) throw error;
         }
-        await client.query(
-          `insert into payments (tenant_id, client_company_id, document_id, tax_type, period_label, amount, currency, due_date, status, metadata)
-           values ($1, $2, $3, 'invoice', $4, $5, $6, $7, 'due', $8::jsonb)`,
-          [
-            tenantId,
-            invoiceRow.client_company_id,
-            invoiceRow.document_id,
-            periodLabel(invoiceRow.issued_at),
-            invoiceRow.gross_total,
-            invoiceRow.currency,
-            invoiceRow.due_date || addDaysIso(invoiceRow.issued_at, 14),
-            JSON.stringify({
-              source: "issued_invoice",
-              ksef_number: statusResult.ksefNumber,
-              invoice_number: invoiceRow.invoice_number,
-            }),
-          ],
-        );
-        await client.query(
-          "insert into audit_log (tenant_id, actor_user_id, action, entity_type, entity_id, after_data) values ($1, $2, 'invoice.accepted', 'issued_invoice', $3, jsonb_build_object('ksef_number', $4::text))",
-          [tenantId, actorUserId, invoiceId, statusResult.ksefNumber],
-        );
-      });
+      }
       return;
     }
 

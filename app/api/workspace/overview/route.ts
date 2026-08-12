@@ -12,7 +12,7 @@ export async function GET(request: NextRequest) {
   }
 
   const data = await withTenantTransaction(session.tenantId, session.userId, async (client) => {
-    const [tenantResult, companiesResult, teamResult, documentsResult, paymentsResult, statsResult, ksefConnectionsResult] = await Promise.all([
+    const [tenantResult, companiesResult, teamResult, documentsResult, paymentsResult, statsResult, ksefConnectionsResult, bankTransactionsResult] = await Promise.all([
       client.query<{ id: string; slug: string; display_name: string; legal_name: string; nip: string | null; settings: Record<string, unknown> }>(
         "select id, slug, display_name, legal_name, nip, settings from tenants where id = $1",
         [session.tenantId],
@@ -97,14 +97,17 @@ export async function GET(request: NextRequest) {
         bank_account_number: string | null;
         transfer_title: string | null;
         created_at: string;
+        payment_reference: string | null;
+        payment_source: string | null;
       }>(`
         select payment.id, payment.tax_type, payment.period_label, payment.amount::text,
           payment.currency, payment.due_date::text, payment.status,
           company.name as company_name,
           coalesce(payment.metadata->>'recipient_name', case when payment.tax_type = 'invoice' then company.name end) as recipient_name,
           coalesce(invoice.bank_account_number, payment.metadata->>'bank_account_number') as bank_account_number,
-          coalesce(payment.metadata->>'transfer_title', payment.metadata->>'invoice_number') as transfer_title,
-          payment.created_at
+          coalesce(payment.payment_reference, payment.metadata->>'transfer_title', payment.metadata->>'invoice_number') as transfer_title,
+          payment.created_at,
+          payment.payment_reference, payment.metadata->>'source' as payment_source
         from payments payment
         join client_companies company on company.id = payment.client_company_id
         left join issued_invoices invoice on invoice.document_id = payment.document_id
@@ -137,6 +140,26 @@ export async function GET(request: NextRequest) {
         where company.deleted_at is null
         order by company.name
       `),
+      client.query<{
+        id: string;
+        client_company_id: string;
+        company_name: string;
+        value_date: string;
+        amount: string;
+        currency: string;
+        description: string;
+        match_status: string;
+        matched_payment_id: string | null;
+      }>(`
+        select transaction.id, transaction.client_company_id, company.name as company_name,
+          transaction.value_date::text, transaction.amount::text, transaction.currency,
+          transaction.description, transaction.match_status, transaction.matched_payment_id
+        from bank_statement_transactions transaction
+        join client_companies company on company.id = transaction.client_company_id
+        where transaction.match_status != 'matched'
+        order by transaction.value_date desc, transaction.created_at desc
+        limit 100
+      `),
     ]);
 
     return {
@@ -147,6 +170,7 @@ export async function GET(request: NextRequest) {
       payments: paymentsResult.rows,
       stats: statsResult.rows[0],
       ksefConnections: ksefConnectionsResult.rows,
+      bankTransactions: bankTransactionsResult.rows,
     };
   });
 

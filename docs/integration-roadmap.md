@@ -8,13 +8,14 @@ Stan na 11 sierpnia 2026 r. Dokument rozróżnia funkcje działające od planowa
 - JPK_FA: import plików XML eksportowanych między innymi z Comarch, InsERT i Symfonii. To import standardowego pliku, a nie bezpośrednie API tych programów.
 - Dokumenty: PDF, obrazy i XML, odczyt tekstu lub OCR, ręczna korekta i rejestr audytowy.
 - Płatności: zwykły przelew na rachunek wskazany przez biuro. Klient kopiuje odbiorcę, rachunek, kwotę i tytuł. Epito nie przyjmuje środków i nie oznacza płatności jako opłaconej bez potwierdzenia.
+- Rozliczanie wpłat: każda wystawiona faktura sprzedaży dostaje unikalny numer referencyjny (widoczny na fakturze jako tytuł przelewu). Import wyciągu bankowego w formacie MT940 automatycznie dopasowuje wpłatę do faktury po referencji i kwocie i oznacza ją jako opłaconą; niezgodności i nierozpoznane wpłaty trafiają do ręcznego potwierdzenia przez biuro.
 
 ## Etap 1: integracje publiczne i bez opłat transakcyjnych
 
 1. Biała Lista VAT Ministerstwa Finansów: weryfikacja NIP, statusu VAT i rachunku na dzień transakcji, z zachowaniem klucza potwierdzającego zapytanie.
 2. REGON BIR1: uzupełnianie danych firmy po NIP lub REGON. Usługa GUS jest bezpłatna, ale wymaga klucza produkcyjnego.
 3. VIES: walidacja numerów VAT UE przez oficjalny interfejs Komisji Europejskiej.
-4. Import wyciągów MT940, CAMT.053 oraz CSV: automatyczne kojarzenie przelewu z płatnością po rachunku, kwocie i tytule. To zastępuje na pierwszym etapie kosztowną integrację z pojedynczym bankiem.
+4. Import wyciągów CAMT.053 oraz CSV jako uzupełnienie działającego już importu MT940 — dla banków, które nie eksportują MT940.
 5. Bezpieczne dane do przelewu: walidacja rachunku, czytelny tytuł, kopiowanie i później kod QR zgodny ze specyfikacją obsługiwaną przez aplikacje bankowe.
 
 ## Etap 2: wymiana z programami księgowymi
