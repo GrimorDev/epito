@@ -18,6 +18,7 @@ import {
   getSessionInvoiceStatus,
   fetchSessionInvoiceUpo,
 } from "./lib/ksef-client.mjs";
+import { checkNipBankAccount } from "./lib/whitelist-client.mjs";
 
 const { Pool } = pg;
 
@@ -109,6 +110,31 @@ function yearMonthOf(isoDate) {
   const parsed = isoDate ? new Date(isoDate) : new Date();
   const valid = Number.isNaN(parsed.getTime()) ? new Date() : parsed;
   return { year: valid.getUTCFullYear(), month: valid.getUTCMonth() + 1 };
+}
+
+// Never throws — checkNipBankAccount already turns network/HTTP failures into
+// a "check_failed" outcome, so a Biała Lista hiccup never breaks the rest of
+// a KSeF sync run. Shared by the automatic check-on-sync path and the manual
+// "Sprawdź ponownie" job (handleWhitelistVerify) so both write the same shape.
+async function verifyWhitelistAndStore(client, tenantId, actorUserId, documentId, nip, bankAccount, checkDate) {
+  const outcome = await checkNipBankAccount(nip, bankAccount, checkDate);
+  const result = {
+    status: outcome.status,
+    nip,
+    bank_account: bankAccount,
+    checked_date: checkDate,
+    checked_at: new Date().toISOString(),
+    request_id: outcome.requestId,
+    message: outcome.message,
+  };
+  await client.query(
+    "update documents set structured_data = jsonb_set(coalesce(structured_data, '{}'::jsonb), '{vat_whitelist}', $1::jsonb, true) where id = $2",
+    [JSON.stringify(result), documentId],
+  );
+  await client.query(
+    "insert into audit_log (tenant_id, actor_user_id, action, entity_type, entity_id, after_data) values ($1, $2, 'document.vat_whitelist_checked', 'document', $3, $4::jsonb)",
+    [tenantId, actorUserId, documentId, JSON.stringify({ status: outcome.status, nip, bank_account: bankAccount })],
+  );
 }
 
 async function saveInvoiceFile(tenantId, xml, isoDate) {
@@ -281,6 +307,8 @@ async function handleKsefSync(job) {
         amount,
         currency,
         dueDate,
+        sellerNip: invoice.sellerNip ?? summary.sellerNip ?? null,
+        bankAccount: summary.bankAccount ?? null,
       });
     }
 
@@ -309,9 +337,32 @@ async function handleKsefSync(job) {
             document.amount,
             document.currency,
             document.ksefNumber,
-            JSON.stringify({ ksef: { synced_at: new Date().toISOString(), environment: connectionRow.environment } }),
+            JSON.stringify({
+              ksef: {
+                synced_at: new Date().toISOString(),
+                environment: connectionRow.environment,
+                seller_nip: document.sellerNip,
+                bank_account: document.bankAccount,
+              },
+            }),
           ],
         );
+
+        if (document.category === "costs" && document.sellerNip && document.bankAccount) {
+          try {
+            await verifyWhitelistAndStore(
+              client,
+              tenantId,
+              actorUserId,
+              inserted.rows[0].id,
+              document.sellerNip,
+              document.bankAccount,
+              document.issuedAt || new Date().toISOString().slice(0, 10),
+            );
+          } catch (error) {
+            console.warn(`Biała Lista VAT: nie udało się zapisać wyniku sprawdzenia dla dokumentu ${inserted.rows[0].id}`, error);
+          }
+        }
 
         if (document.category === "costs" && document.amount !== null) {
           await client.query(
@@ -600,9 +651,44 @@ async function handleInvoiceIssue(job) {
   }
 }
 
+// Manual "Sprawdź ponownie" path — reads the NIP/account already captured at
+// sync time (structured_data.ksef, extended in handleKsefSync) rather than
+// re-fetching/re-parsing the invoice XML.
+async function handleWhitelistVerify(job) {
+  const documentId = String(job.data.payload?.documentId || "");
+  if (!documentId) throw new Error("Missing documentId");
+  const tenantId = job.data.tenantId;
+  const actorUserId = job.data.actorUserId || null;
+
+  const documentRow = await withTenant(tenantId, actorUserId, async (client) => {
+    const result = await client.query(
+      "select id, issued_at, structured_data from documents where id = $1 and deleted_at is null",
+      [documentId],
+    );
+    return result.rows[0] || null;
+  });
+  if (!documentRow) {
+    console.warn(`Document ${documentId} not found, skipping whitelist.verify job`);
+    return;
+  }
+
+  const nip = documentRow.structured_data?.ksef?.seller_nip;
+  const bankAccount = documentRow.structured_data?.ksef?.bank_account;
+  if (!nip || !bankAccount) {
+    console.warn(`Document ${documentId} has no seller NIP/bank account captured, skipping whitelist.verify job`);
+    return;
+  }
+
+  const checkDate = documentRow.issued_at ? isoDateOnly(documentRow.issued_at) : null;
+  await withTenant(tenantId, actorUserId, (client) =>
+    verifyWhitelistAndStore(client, tenantId, actorUserId, documentId, nip, bankAccount, checkDate || new Date().toISOString().slice(0, 10)),
+  );
+}
+
 async function processJob(job) {
   if (job.name === "ksef.sync") return handleKsefSync(job);
   if (job.name === "invoice.issue") return handleInvoiceIssue(job);
+  if (job.name === "whitelist.verify") return handleWhitelistVerify(job);
 }
 
 const worker = new Worker("integrations", processJob, {

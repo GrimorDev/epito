@@ -34,6 +34,9 @@ test("parseInvoiceSummary extracts amount, date and NIPs from a namespaced FA(2)
         <tns:TerminPlatnosci>
           <tns:Termin>2026-08-21</tns:Termin>
         </tns:TerminPlatnosci>
+        <tns:RachunekBankowy>
+          <tns:NrRB>40124010661111001156329830</tns:NrRB>
+        </tns:RachunekBankowy>
       </tns:Platnosc>
     </tns:Faktura>`;
 
@@ -44,6 +47,7 @@ test("parseInvoiceSummary extracts amount, date and NIPs from a namespaced FA(2)
   assert.equal(summary.sellerNip, "5252931842");
   assert.equal(summary.buyerNip, "1234567890");
   assert.equal(summary.paymentDueDate, "2026-08-21");
+  assert.equal(summary.bankAccount, "40124010661111001156329830");
 });
 
 test("parseInvoiceSummary resolves missing fields to null instead of throwing", () => {
@@ -54,4 +58,5 @@ test("parseInvoiceSummary resolves missing fields to null instead of throwing", 
   assert.equal(summary.sellerNip, null);
   assert.equal(summary.buyerNip, null);
   assert.equal(summary.paymentDueDate, null);
+  assert.equal(summary.bankAccount, null);
 });

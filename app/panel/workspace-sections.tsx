@@ -61,6 +61,15 @@ export type WorkspaceDocument = {
   issuedInvoiceId?: string | null;
   issuedInvoiceStatus?: string | null;
   issuedInvoiceError?: string | null;
+  vatWhitelistStatus?: string | null;
+  vatWhitelistMessage?: string | null;
+};
+
+export const vatWhitelistStatusLabels: Record<string, string> = {
+  confirmed: "Rachunek na Białej Liście VAT",
+  mismatch: "Rachunek NIE jest na Białej Liście VAT",
+  invalid_input: "Nie udało się sprawdzić (dane wejściowe)",
+  check_failed: "Nie udało się sprawdzić Białej Listy VAT",
 };
 
 export const issuedInvoiceStatusLabels: Record<string, string> = {
@@ -132,6 +141,7 @@ export function DocumentsWorkspace({ documents, setDocuments, onUpload, onOpenIm
   const [fullscreenId, setFullscreenId] = useState<string | number | null>(null);
   const [reanalyzingId, setReanalyzingId] = useState<string | number | null>(null);
   const [retryingInvoiceId, setRetryingInvoiceId] = useState<string | null>(null);
+  const [verifyingWhitelistId, setVerifyingWhitelistId] = useState<string | number | null>(null);
   const [folders, setFolders] = useState(["Sprzedaż", "Koszty", "Bank", "Umowy"]);
   const [newFolder, setNewFolder] = useState("");
   const [addingFolder, setAddingFolder] = useState(false);
@@ -247,6 +257,25 @@ export function DocumentsWorkspace({ documents, setDocuments, onUpload, onOpenIm
     }
   }
 
+  async function verifyWhitelist(documentId: string | number) {
+    setVerifyingWhitelistId(documentId);
+    if (!production) {
+      window.setTimeout(() => setVerifyingWhitelistId(null), 600);
+      onNotice?.("To demonstracja — sprawdzenie Białej Listy VAT jest dostępne tylko na koncie produkcyjnym.");
+      return;
+    }
+    try {
+      const response = await fetch(`/api/workspace/documents/${documentId}/verify-whitelist`, { method: "POST" });
+      const payload = (await response.json()) as { error?: string };
+      if (!response.ok) throw new Error(payload.error || "Nie udało się zlecić sprawdzenia.");
+      onNotice?.("Sprawdzenie Białej Listy VAT zostało zlecone. Wynik pojawi się po chwili.");
+    } catch (reason) {
+      onNotice?.(reason instanceof Error ? reason.message : "Nie udało się zlecić sprawdzenia.");
+    } finally {
+      setVerifyingWhitelistId(null);
+    }
+  }
+
   function addFolder() {
     const name = newFolder.trim();
     if (!name || folders.includes(name)) return;
@@ -334,6 +363,16 @@ export function DocumentsWorkspace({ documents, setDocuments, onUpload, onOpenIm
                           </button>
                         ) : null}
                       </>
+                    ) : document.vatWhitelistStatus ? (
+                      <>
+                        <span className={`ksef-status ${document.vatWhitelistStatus === "confirmed" ? "accepted" : document.vatWhitelistStatus === "mismatch" ? "error" : "pending"}`}>{vatWhitelistStatusLabels[document.vatWhitelistStatus] || document.vatWhitelistStatus}</span>
+                        {document.vatWhitelistStatus !== "confirmed" ? (
+                          <button className="ksef-retry-button" type="button" onClick={() => void verifyWhitelist(document.id)} disabled={verifyingWhitelistId === document.id} title="Sprawdź ponownie w Białej Liście VAT">
+                            <RefreshCw size={14} className={verifyingWhitelistId === document.id ? "spinning" : ""} />
+                            <span>{verifyingWhitelistId === document.id ? "Sprawdzam" : "Sprawdź ponownie"}</span>
+                          </button>
+                        ) : null}
+                      </>
                     ) : <span className="ksef-not-applicable">Nie dotyczy</span>}
                   </div>
                   <strong className="document-amount">{document.amount ?? "Brak"}</strong>
@@ -379,9 +418,12 @@ export function DocumentsWorkspace({ documents, setDocuments, onUpload, onOpenIm
                     <div><span>Status</span><strong>{preview.status}</strong></div>
                     <div><span>Kwota</span><strong>{preview.amount ?? "Nie dotyczy"}</strong></div>
                     {preview.issuedInvoiceStatus ? <div><span>Status KSeF</span><strong>{issuedInvoiceStatusLabels[preview.issuedInvoiceStatus] || preview.issuedInvoiceStatus}</strong></div> : null}
+                    {preview.vatWhitelistStatus ? <div><span>Biała Lista VAT</span><strong>{vatWhitelistStatusLabels[preview.vatWhitelistStatus] || preview.vatWhitelistStatus}</strong></div> : null}
                   </div>
                   {preview.issuedInvoiceStatus === "failed" || preview.issuedInvoiceStatus === "rejected" ? <div className="analysis-note status-error-note"><strong>{issuedInvoiceStatusLabels[preview.issuedInvoiceStatus] || preview.issuedInvoiceStatus}</strong><span>{preview.issuedInvoiceError || "KSeF nie przyjął tej faktury."}</span></div> : null}
                   {(preview.issuedInvoiceStatus === "failed" || preview.issuedInvoiceStatus === "rejected") && preview.issuedInvoiceId ? <button className="reanalyze-document" onClick={() => void retryInvoice(preview.issuedInvoiceId!)} disabled={retryingInvoiceId === preview.issuedInvoiceId}><RefreshCw size={16} className={retryingInvoiceId === preview.issuedInvoiceId ? "spinning" : ""} />{retryingInvoiceId === preview.issuedInvoiceId ? "Wysyłam ponownie" : "Wyślij ponownie do KSeF"}</button> : null}
+                  {preview.vatWhitelistStatus === "mismatch" ? <div className="analysis-note status-error-note"><strong>Rachunek nie jest na Białej Liście VAT</strong><span>Sprzedawca nie ma tego rachunku zarejestrowanego w oficjalnym rejestrze na dzień faktury — sprawdź przed zapłatą, to może być podmiana rachunku.</span></div> : preview.vatWhitelistStatus === "check_failed" ? <div className="analysis-note"><strong>Nie udało się sprawdzić Białej Listy VAT</strong><span>{preview.vatWhitelistMessage || "Spróbuj ponownie za chwilę."}</span></div> : null}
+                  {preview.vatWhitelistStatus && preview.vatWhitelistStatus !== "confirmed" ? <button className="reanalyze-document" onClick={() => void verifyWhitelist(preview.id)} disabled={verifyingWhitelistId === preview.id}><RefreshCw size={16} className={verifyingWhitelistId === preview.id ? "spinning" : ""} />{verifyingWhitelistId === preview.id ? "Sprawdzam" : "Sprawdź ponownie w Białej Liście VAT"}</button> : null}
                   {preview.manualOverride ? <div className="analysis-note"><strong>Dane poprawione ręcznie</strong><span>Kwota, status lub data zostały zatwierdzone przez użytkownika i mają pierwszeństwo przed OCR.</span></div> : preview.analysis ? <div className="analysis-note"><strong>{preview.analysis.method === "ocr" ? "Odczyt OCR" : "Tekst z PDF"}{typeof preview.analysis.confidence === "number" && preview.analysis.confidence > 0 ? ` · ${Math.round(preview.analysis.confidence * 100)}% pewności` : ""}</strong><span>{preview.analysis.reason || (preview.analysis.amount_source ? `Kwota znaleziona przy polu „${preview.analysis.amount_source}”.` : "Dane dokumentu zostały przeanalizowane.")}</span></div> : <div className="analysis-note"><strong>{preview.statusCode === "processing" || preview.statusCode === "uploaded" ? "Analiza trwa" : "Brak analizy"}</strong><span>{preview.statusCode === "processing" || preview.statusCode === "uploaded" ? "Worker odczytuje tekst i kwotę. Widok odświeży się automatycznie po zakończeniu." : "Kwotę i metadane możesz uzupełnić ręcznie."}</span></div>}
                   {production && !preview.manualOverride && preview.statusCode !== "processing" ? <button className="reanalyze-document" onClick={() => void reanalyzeDocument(preview.id)} disabled={reanalyzingId === preview.id}><RefreshCw size={16} className={reanalyzingId === preview.id ? "spinning" : ""} />{reanalyzingId === preview.id ? "Dodawanie do kolejki" : "Analizuj ponownie"}</button> : null}
                   <div className="preview-actions"><button onClick={() => { setPreviewId(null); setFullscreenId(preview.id); }}><Maximize2 size={17} /> Pełny ekran</button>{production ? <a className="document-download-link" href={`/api/workspace/documents/${preview.id}`}><Download size={17} /> Pobierz</a> : <button><Download size={17} /> Pobierz</button>}{production && preview.mimeType?.includes("xml") ? <a className="document-download-link" href={`/api/workspace/documents/${preview.id}?format=pdf`}><Download size={17} /> Pobierz PDF</a> : null}<button onClick={() => beginEdit(preview)}><Pencil size={17} /> Edytuj dane</button></div>

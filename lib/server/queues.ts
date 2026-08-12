@@ -14,7 +14,8 @@ export type BackgroundJob = {
     | "document.analyze"
     | "ksef.sync"
     | "invoice.issue"
-    | "payment.reconcile";
+    | "payment.reconcile"
+    | "whitelist.verify";
   payload: Record<string, unknown>;
   createdAt: string;
 };
@@ -92,6 +93,16 @@ export async function enqueueInvoiceIssue(invoiceId: string, tenantId: string, a
     actorUserId,
     type: "invoice.issue",
     payload: { invoiceId },
+    createdAt: new Date().toISOString(),
+  });
+}
+
+export async function enqueueWhitelistVerify(documentId: string, tenantId: string, actorUserId: string | null) {
+  await enqueueBackgroundJob("integrations", {
+    tenantId,
+    actorUserId,
+    type: "whitelist.verify",
+    payload: { documentId },
     createdAt: new Date().toISOString(),
   });
 }

@@ -38,7 +38,7 @@ type Overview = {
   tenant: { id: string; slug: string; display_name: string; legal_name: string; nip: string | null };
   companies: Array<{ id: string; name: string; nip: string | null; email: string | null; phone: string | null; status: string; created_at: string; documents_count: number; payments_count: number }>;
   team: Array<{ id: string; email: string; full_name: string; role: string; status: string }>;
-  documents: Array<{ id: string; name: string; category: string; status: string; document_year: number; document_month: number; amount: string | null; currency: string; company_name: string; created_at: string; issued_invoice_id: string | null; issued_invoice_number: string | null; issued_invoice_status: string | null; issued_invoice_error: string | null; issued_invoice_created_at: string | null; issued_invoice_updated_at: string | null; issued_invoice_environment: string | null; issued_invoice_reference: string | null; ksef_number: string | null }>;
+  documents: Array<{ id: string; name: string; category: string; status: string; document_year: number; document_month: number; amount: string | null; currency: string; company_name: string; created_at: string; issued_invoice_id: string | null; issued_invoice_number: string | null; issued_invoice_status: string | null; issued_invoice_error: string | null; issued_invoice_created_at: string | null; issued_invoice_updated_at: string | null; issued_invoice_environment: string | null; issued_invoice_reference: string | null; ksef_number: string | null; structured_data: { vat_whitelist?: { status: string; message: string | null } } }>;
   payments: Array<{ id: string; tax_type: string; period_label: string; amount: string; currency: string; due_date: string; status: string; company_name: string; recipient_name: string | null; bank_account_number: string | null; transfer_title: string | null; created_at: string }>;
   stats: { clients_count: number; documents_count: number; payments_due_count: number; payments_due_total: string };
   ksefConnections: Array<{ id: string; client_company_id: string; client_company_name: string; environment: string; nip: string; status: string; last_synced_at: string | null; last_error: string | null; created_at: string }>;
@@ -110,6 +110,13 @@ const paymentStatusLabel: Record<string, string> = {
   paid: "Opłacona",
   failed: "Błąd płatności",
   cancelled: "Anulowana",
+};
+
+const whitelistStatusLabel: Record<string, string> = {
+  confirmed: "Rachunek na Białej Liście VAT",
+  mismatch: "Rachunek NIE na Białej Liście VAT",
+  invalid_input: "Nie udało się sprawdzić",
+  check_failed: "Nie udało się sprawdzić",
 };
 
 const accountStatusLabel: Record<string, string> = {
@@ -625,6 +632,7 @@ function CompaniesTable({
 function DocumentsTable({ documents, onChanged }: { documents: Overview["documents"]; onChanged?: () => Promise<void> | void }) {
   const [retryingId, setRetryingId] = useState<string | null>(null);
   const [cancellingId, setCancellingId] = useState<string | null>(null);
+  const [verifyingWhitelistId, setVerifyingWhitelistId] = useState<string | null>(null);
   const [selectedDocument, setSelectedDocument] = useState<Overview["documents"][number] | null>(null);
   const [error, setError] = useState("");
 
@@ -674,6 +682,21 @@ function DocumentsTable({ documents, onChanged }: { documents: Overview["documen
     }
   }
 
+  async function verifyWhitelist(documentId: string) {
+    setVerifyingWhitelistId(documentId);
+    setError("");
+    try {
+      const response = await fetch(`/api/workspace/documents/${documentId}/verify-whitelist`, { method: "POST" });
+      const payload = (await response.json()) as { error?: string };
+      if (!response.ok) throw new Error(payload.error || "Nie udało się zlecić sprawdzenia.");
+      await onChanged?.();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Nie udało się zlecić sprawdzenia.");
+    } finally {
+      setVerifyingWhitelistId(null);
+    }
+  }
+
   return (
     <div className={styles.tableWrap}>
       {error ? <div className={styles.error}>{error}</div> : null}
@@ -693,6 +716,13 @@ function DocumentsTable({ documents, onChanged }: { documents: Overview["documen
                   <div className={styles.ksefCell}>
                     <span className={`${styles.status} ${document.issued_invoice_status === "accepted" ? styles.ksefAccepted : document.issued_invoice_status === "failed" || document.issued_invoice_status === "rejected" ? styles.ksefError : document.issued_invoice_status === "cancelled" ? styles.ksefCancelled : styles.ksefPending}`}>{issuedInvoiceStatusLabels[document.issued_invoice_status] || "Nieznany status"}</span>
                     <button className={styles.ksefDetailsButton} type="button" onClick={() => setSelectedDocument(document)}>Szczegóły</button>
+                  </div>
+                ) : document.structured_data?.vat_whitelist ? (
+                  <div className={styles.ksefCell}>
+                    <span className={`${styles.status} ${document.structured_data.vat_whitelist.status === "confirmed" ? styles.ksefAccepted : document.structured_data.vat_whitelist.status === "mismatch" ? styles.ksefError : styles.ksefPending}`}>{whitelistStatusLabel[document.structured_data.vat_whitelist.status] || "Nieznany status"}</span>
+                    {document.structured_data.vat_whitelist.status !== "confirmed" ? (
+                      <button className={styles.ksefDetailsButton} type="button" disabled={verifyingWhitelistId === document.id} onClick={() => void verifyWhitelist(document.id)}>{verifyingWhitelistId === document.id ? "Sprawdzam…" : "Sprawdź ponownie"}</button>
+                    ) : null}
                   </div>
                 ) : "—"}
               </td>
