@@ -478,6 +478,7 @@ export type ParsedInvoiceSummary = {
   buyerNip: string | null;
   paymentDueDate: string | null;
   bankAccount: string | null;
+  sellerName: string | null;
 };
 
 // FA(2)/FA(3) field names (P_1, P_15, Podmiot1/Podmiot2, KodWaluty) are best-effort
@@ -500,6 +501,7 @@ export function parseInvoiceSummary(xml: string): ParsedInvoiceSummary {
     buyerNip: findNip(parsed, "Podmiot2"),
     paymentDueDate: findFirstIsoDate(deepFind(parsed, "TerminPlatnosci")),
     bankAccount: findFirstString(parsed, ["NrRB"]),
+    sellerName: findFirstString(deepFind(parsed, "Podmiot1"), ["Nazwa"]),
   };
 }
 

@@ -15,7 +15,8 @@ export type BackgroundJob = {
     | "ksef.sync"
     | "invoice.issue"
     | "payment.reconcile"
-    | "whitelist.verify";
+    | "whitelist.verify"
+    | "payment.remind";
   payload: Record<string, unknown>;
   createdAt: string;
 };
