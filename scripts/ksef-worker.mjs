@@ -19,7 +19,7 @@ import {
   fetchSessionInvoiceUpo,
 } from "./lib/ksef-client.mjs";
 import { checkNipBankAccount } from "./lib/whitelist-client.mjs";
-import { sendEmail } from "./lib/resend-client.mjs";
+import { sendEmail } from "./lib/smtp-client.mjs";
 import { buildReminderEmailHtml, taxTypeLabel } from "./lib/reminder-email.mjs";
 import { buildLeadNotificationEmailHtml } from "./lib/lead-email.mjs";
 
@@ -33,6 +33,18 @@ async function secret(name) {
   return value;
 }
 
+async function optionalSecret(name) {
+  const file = process.env[name]?.trim();
+  if (!file) return null;
+  try {
+    const value = (await readFile(file, "utf8")).trim();
+    return value || null;
+  } catch (error) {
+    console.warn(`Nie udało się odczytać ${name} — wysyłka e-mail przez SMTP jest wyłączona.`, error);
+    return null;
+  }
+}
+
 const databasePassword = await secret("DATABASE_PASSWORD_FILE");
 const redisPassword = await secret("REDIS_PASSWORD_FILE");
 const encryptionKey = Buffer.from(await secret("KSEF_ENCRYPTION_KEY_FILE"), "base64");
@@ -40,16 +52,19 @@ if (encryptionKey.length !== 32) {
   throw new Error("KSEF_ENCRYPTION_KEY_FILE must decode to exactly 32 bytes (base64)");
 }
 const uploadsRoot = path.resolve(process.env.EPITO_UPLOADS_DIR?.trim() || "/app/data/uploads");
-// A plain env var, not a secret file, unlike KSEF_ENCRYPTION_KEY_FILE — a
-// Docker secret sourced from an environment variable requires that variable
-// to be set (even to empty) at deploy time, which broke fresh deploys before
-// this was ever configured. Optional either way: sendEmail() degrades to
-// {ok:false} without a key.
-const resendApiKey = process.env.RESEND_API_KEY?.trim() || null;
-const resendFromEmail = process.env.RESEND_FROM_EMAIL?.trim() || `powiadomienia@${process.env.EPITO_BASE_DOMAIN?.trim() || "epito.pl"}`;
+// SMTP submission straight to the mailbox's own mail server (Zimbra/OVH),
+// authenticated as that mailbox — not a third-party ESP. sendEmail()
+// degrades to {ok:false} without host/user/pass, so a misconfigured or
+// not-yet-set-up mailbox never crashes the worker, just skips sending.
+const smtpHost = process.env.SMTP_HOST?.trim() || null;
+const smtpPort = Number(process.env.SMTP_PORT || 587);
+const smtpSecure = process.env.SMTP_SECURE === "true";
+const smtpUser = process.env.SMTP_USER?.trim() || null;
+const smtpPassword = await optionalSecret("SMTP_PASSWORD_FILE");
+const smtpFrom = process.env.SMTP_FROM?.trim() || smtpUser;
 // Reminders go to real client companies who sometimes reply — route those
 // replies to a monitored support inbox instead of the unmonitored sender.
-const resendReplyTo = process.env.RESEND_REPLY_TO?.trim() || null;
+const smtpReplyTo = process.env.SMTP_REPLY_TO?.trim() || null;
 
 const pool = new Pool({
   host: process.env.DATABASE_HOST,
@@ -813,12 +828,16 @@ async function handlePaymentReminders() {
       daysUntilDue,
     });
     const outcome = await sendEmail({
-      apiKey: resendApiKey,
-      from: resendFromEmail,
+      host: smtpHost,
+      port: smtpPort,
+      secure: smtpSecure,
+      user: smtpUser,
+      pass: smtpPassword,
+      from: smtpFrom,
       to: row.company_email,
       subject: `Przypomnienie: ${taxTypeLabel(row.tax_type)} — termin za ${daysUntilDue} dni`,
       html,
-      replyTo: resendReplyTo,
+      replyTo: smtpReplyTo,
     });
     if (outcome.ok) {
       await withUser(supervisorUserId, (client) =>
@@ -835,9 +854,10 @@ async function handlePaymentReminders() {
 
 // No RLS/tenant context needed — nothing here reads or writes any
 // tenant-scoped table, just formats and sends one email to the business
-// inbox that receives marketing leads (RESEND_FROM_EMAIL doubles as both
-// sender and recipient here; replyTo is the lead's own address so a human
-// can just hit reply instead of copy-pasting it).
+// inbox that receives marketing leads (smtpUser doubles as both sender and
+// recipient here — biuro@ mailing itself, which is local delivery on the
+// same Zimbra server, not an external hop; replyTo is the lead's own address
+// so a human can just hit reply instead of copy-pasting it).
 async function handleLeadNotify(job) {
   const { name, email, companiesRange } = job.data.payload || {};
   if (!name || !email) {
@@ -846,9 +866,13 @@ async function handleLeadNotify(job) {
   }
   const html = buildLeadNotificationEmailHtml({ name, email, companiesRange });
   const outcome = await sendEmail({
-    apiKey: resendApiKey,
-    from: resendFromEmail,
-    to: resendFromEmail,
+    host: smtpHost,
+    port: smtpPort,
+    secure: smtpSecure,
+    user: smtpUser,
+    pass: smtpPassword,
+    from: smtpFrom,
+    to: smtpUser,
     subject: `Nowe zgłoszenie pilotażu: ${name}`,
     html,
     replyTo: email,
