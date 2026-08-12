@@ -392,6 +392,12 @@ function findNip(node, subjectKey) {
   return typeof nip === "string" ? nip.trim() : null;
 }
 
+function findSubjectName(node, subjectKey) {
+  const subject = deepFind(node, subjectKey);
+  const name = deepFind(subject, "Nazwa");
+  return typeof name === "string" && name.trim() ? name.trim() : null;
+}
+
 function findFirstIsoDate(node) {
   if (typeof node === "string") {
     const match = node.match(/^\d{4}-\d{2}-\d{2}/);
@@ -433,5 +439,6 @@ export function parseInvoiceSummary(xml) {
     buyerNip: findNip(parsed, "Podmiot2"),
     paymentDueDate: findFirstIsoDate(deepFind(parsed, "TerminPlatnosci")),
     bankAccount: findFirstString(parsed, ["NrRB"]),
+    sellerName: findSubjectName(parsed, "Podmiot1"),
   };
 }

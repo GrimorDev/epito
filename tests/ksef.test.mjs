@@ -25,7 +25,7 @@ test("parseInvoiceSummary extracts amount, date and NIPs from a namespaced FA(2)
         <tns:P_15>1230.50</tns:P_15>
       </tns:Fa>
       <tns:Podmiot1>
-        <tns:DaneIdentyfikacyjne><tns:NIP>5252931842</tns:NIP></tns:DaneIdentyfikacyjne>
+        <tns:DaneIdentyfikacyjne><tns:NIP>5252931842</tns:NIP><tns:Nazwa>Nova Print sp. z o.o.</tns:Nazwa></tns:DaneIdentyfikacyjne>
       </tns:Podmiot1>
       <tns:Podmiot2>
         <tns:DaneIdentyfikacyjne><tns:NIP>1234567890</tns:NIP></tns:DaneIdentyfikacyjne>
@@ -48,6 +48,7 @@ test("parseInvoiceSummary extracts amount, date and NIPs from a namespaced FA(2)
   assert.equal(summary.buyerNip, "1234567890");
   assert.equal(summary.paymentDueDate, "2026-08-21");
   assert.equal(summary.bankAccount, "40124010661111001156329830");
+  assert.equal(summary.sellerName, "Nova Print sp. z o.o.");
 });
 
 test("parseInvoiceSummary resolves missing fields to null instead of throwing", () => {
@@ -59,4 +60,5 @@ test("parseInvoiceSummary resolves missing fields to null instead of throwing", 
   assert.equal(summary.buyerNip, null);
   assert.equal(summary.paymentDueDate, null);
   assert.equal(summary.bankAccount, null);
+  assert.equal(summary.sellerName, null);
 });

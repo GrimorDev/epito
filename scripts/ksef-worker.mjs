@@ -19,6 +19,8 @@ import {
   fetchSessionInvoiceUpo,
 } from "./lib/ksef-client.mjs";
 import { checkNipBankAccount } from "./lib/whitelist-client.mjs";
+import { sendEmail } from "./lib/resend-client.mjs";
+import { buildReminderEmailHtml, taxTypeLabel } from "./lib/reminder-email.mjs";
 
 const { Pool } = pg;
 
@@ -30,6 +32,21 @@ async function secret(name) {
   return value;
 }
 
+// Unlike secret() above, a missing/unreadable optional secret is not fatal —
+// used for integrations (Resend) that are allowed to be unconfigured while
+// the rest of the worker keeps running.
+async function optionalSecret(name) {
+  const file = process.env[name]?.trim();
+  if (!file) return null;
+  try {
+    const value = (await readFile(file, "utf8")).trim();
+    return value || null;
+  } catch (error) {
+    console.warn(`Nie udało się odczytać ${name}`, error);
+    return null;
+  }
+}
+
 const databasePassword = await secret("DATABASE_PASSWORD_FILE");
 const redisPassword = await secret("REDIS_PASSWORD_FILE");
 const encryptionKey = Buffer.from(await secret("KSEF_ENCRYPTION_KEY_FILE"), "base64");
@@ -37,6 +54,8 @@ if (encryptionKey.length !== 32) {
   throw new Error("KSEF_ENCRYPTION_KEY_FILE must decode to exactly 32 bytes (base64)");
 }
 const uploadsRoot = path.resolve(process.env.EPITO_UPLOADS_DIR?.trim() || "/app/data/uploads");
+const resendApiKey = await optionalSecret("RESEND_API_KEY_FILE");
+const resendFromEmail = process.env.RESEND_FROM_EMAIL?.trim() || `powiadomienia@${process.env.EPITO_BASE_DOMAIN?.trim() || "epito.pl"}`;
 
 const pool = new Pool({
   host: process.env.DATABASE_HOST,
@@ -75,6 +94,62 @@ async function withTenant(tenantId, userId, callback) {
   } finally {
     client.release();
   }
+}
+
+// Mirrors lib/server/database.ts's withUserTransaction — never sets
+// app.current_tenant_id, so RLS only grants access through the
+// "... or app_is_supervisor()" clause on payments/client_companies. Used for
+// the daily cross-tenant payment-reminder scan, which has no single
+// tenantId to start from (every other job here is handed one already).
+async function withUser(userId, callback) {
+  const client = await pool.connect();
+  try {
+    await client.query("begin");
+    await client.query("select set_config('app.current_tenant_id', '', true), set_config('app.current_user_id', $1, true)", [userId]);
+    const value = await callback(client);
+    await client.query("commit");
+    return value;
+  } catch (error) {
+    await client.query("rollback");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+// Resolved once at boot, not per-job — the daily reminder scan has no
+// per-tenant caller to hand it a userId, so it runs as this codebase's
+// existing "run cross-tenant as a real supervisor" convention (same
+// mechanism as app/api/supervisor/tenants/route.ts's withUserTransaction).
+// epito_get_login_identity is a security-definer function already granted
+// to epito_app — safe to call on a plain, context-free pool query.
+let supervisorUserId = null;
+const supervisorEmail = process.env.SUPERVISOR_EMAIL?.trim();
+if (supervisorEmail) {
+  try {
+    const result = await pool.query("select * from epito_get_login_identity($1)", [supervisorEmail]);
+    const row = result.rows[0];
+    if (row && row.platform_role === "supervisor") {
+      supervisorUserId = row.user_id;
+    } else {
+      console.warn(`SUPERVISOR_EMAIL (${supervisorEmail}) nie wskazuje na aktywnego supervisora — przypomnienia o płatnościach są wyłączone.`);
+    }
+  } catch (error) {
+    console.warn("Nie udało się rozwiązać SUPERVISOR_EMAIL — przypomnienia o płatnościach są wyłączone.", error);
+  }
+} else {
+  console.warn("SUPERVISOR_EMAIL nie ustawione — przypomnienia o płatnościach są wyłączone.");
+}
+
+if (supervisorUserId) {
+  // upsertJobScheduler is idempotent by id — safe to call on every worker
+  // restart. Global, not per-tenant (unlike scheduleKsefSync), so nothing on
+  // the Next.js side ever needs to trigger this.
+  await invoiceQueue.upsertJobScheduler(
+    "payment-reminders-daily",
+    { pattern: "0 7 * * *" },
+    { name: "payment.remind", data: { type: "payment.remind", payload: {}, createdAt: new Date().toISOString() } },
+  );
 }
 
 function isoDateOnly(value) {
@@ -309,6 +384,7 @@ async function handleKsefSync(job) {
         dueDate,
         sellerNip: invoice.sellerNip ?? summary.sellerNip ?? null,
         bankAccount: summary.bankAccount ?? null,
+        sellerName: summary.sellerName ?? null,
       });
     }
 
@@ -378,7 +454,12 @@ async function handleKsefSync(job) {
               document.amount,
               document.currency,
               document.dueDate,
-              JSON.stringify({ source: "ksef", ksef_number: document.ksefNumber }),
+              JSON.stringify({
+                source: "ksef",
+                ksef_number: document.ksefNumber,
+                ...(document.sellerName ? { recipient_name: document.sellerName } : {}),
+                ...(document.bankAccount ? { bank_account_number: document.bankAccount } : {}),
+              }),
             ],
           );
         }
@@ -685,10 +766,83 @@ async function handleWhitelistVerify(job) {
   );
 }
 
+function daysUntil(isoDate) {
+  const today = new Date(`${new Date().toISOString().slice(0, 10)}T00:00:00Z`);
+  const due = new Date(`${isoDate}T00:00:00Z`);
+  return Math.round((due.getTime() - today.getTime()) / 86_400_000);
+}
+
+// Global, cross-tenant daily scan — scoped to obligations only
+// (metadata.source distinct from "issued_invoice": VAT/PIT/CIT/ZUS plus
+// KSeF-synced cost invoices), not receivables from the tenant's own issued
+// invoices, which would need a different recipient entirely (the tenant's
+// own counterparty, who never has an Epito account either). Two nudges (7
+// and 2 days before the due date) — nothing on or after the due date, since
+// that's exactly the point where this is meant to hand back to the
+// accountant via the notification bell already in /panel, not to the client.
+async function handlePaymentReminders() {
+  if (!supervisorUserId) {
+    console.warn("Pominięto skan przypomnień o płatnościach — brak rozwiązanego supervisora.");
+    return;
+  }
+
+  const rows = await withUser(supervisorUserId, async (client) => {
+    const result = await client.query(`
+      select payment.id, payment.amount, payment.currency, payment.due_date::text, payment.tax_type,
+        payment.period_label, payment.metadata, company.email as company_email, company.name as company_name,
+        tenant.display_name as tenant_name
+      from payments payment
+      join client_companies company on company.id = payment.client_company_id
+      join tenants tenant on tenant.id = payment.tenant_id
+      where payment.status in ('due', 'failed')
+        and payment.metadata->>'source' is distinct from 'issued_invoice'
+        and company.email is not null and company.deleted_at is null
+        and (payment.due_date - current_date) in (7, 2)
+        and coalesce(payment.metadata->>'last_reminder_sent_at', '') <> current_date::text
+    `);
+    return result.rows;
+  });
+
+  for (const row of rows) {
+    const daysUntilDue = daysUntil(row.due_date);
+    const html = buildReminderEmailHtml({
+      companyName: row.company_name,
+      tenantName: row.tenant_name,
+      taxType: row.tax_type,
+      periodLabel: row.period_label,
+      amount: row.amount,
+      currency: row.currency,
+      dueDate: row.due_date,
+      recipientName: row.metadata?.recipient_name || null,
+      bankAccountNumber: row.metadata?.bank_account_number || null,
+      transferTitle: row.metadata?.transfer_title || row.metadata?.invoice_number || null,
+      daysUntilDue,
+    });
+    const outcome = await sendEmail({
+      apiKey: resendApiKey,
+      from: resendFromEmail,
+      to: row.company_email,
+      subject: `Przypomnienie: ${taxTypeLabel(row.tax_type)} — termin za ${daysUntilDue} dni`,
+      html,
+    });
+    if (outcome.ok) {
+      await withUser(supervisorUserId, (client) =>
+        client.query(
+          "update payments set metadata = jsonb_set(metadata, '{last_reminder_sent_at}', to_jsonb(current_date::text)) where id = $1",
+          [row.id],
+        ),
+      );
+    } else {
+      console.warn(`Nie udało się wysłać przypomnienia dla płatności ${row.id}: ${outcome.error}`);
+    }
+  }
+}
+
 async function processJob(job) {
   if (job.name === "ksef.sync") return handleKsefSync(job);
   if (job.name === "invoice.issue") return handleInvoiceIssue(job);
   if (job.name === "whitelist.verify") return handleWhitelistVerify(job);
+  if (job.name === "payment.remind") return handlePaymentReminders(job);
 }
 
 const worker = new Worker("integrations", processJob, {
