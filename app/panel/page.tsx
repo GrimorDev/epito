@@ -81,7 +81,7 @@ type PortalOverview = {
   tenant: { id: string; slug: string; display_name: string; legal_name: string; nip: string | null; settings: { branding?: { accentColor?: string; headerName?: string; logoKey?: string }; notifications?: { email?: boolean; paymentReminders?: boolean } } };
   companies: Array<{ id: string; name: string }>;
   team: Array<{ id: string; email: string; full_name: string; role: string; status: string }>;
-  documents: Array<{ id: string; name: string; category: string; status: string; document_year: number; document_month: number; amount: string | null; currency: string; issued_at: string | null; mime_type: string; file_size: number; structured_data: { analysis?: WorkspaceDocument["analysis"]; manual_override?: Record<string, unknown> }; company_name: string; created_at: string; issued_invoice_id: string | null; issued_invoice_status: string | null; issued_invoice_error: string | null }>;
+  documents: Array<{ id: string; name: string; category: string; status: string; document_year: number; document_month: number; amount: string | null; currency: string; issued_at: string | null; mime_type: string; file_size: number; structured_data: { analysis?: WorkspaceDocument["analysis"]; manual_override?: Record<string, unknown>; vat_whitelist?: { status: string; message: string | null } }; company_name: string; created_at: string; issued_invoice_id: string | null; issued_invoice_status: string | null; issued_invoice_error: string | null }>;
   payments: Array<{ id: string; tax_type: string; period_label: string; amount: string; currency: string; due_date: string; status: string; company_name: string; recipient_name: string | null; bank_account_number: string | null; transfer_title: string | null; created_at: string; payment_reference: string | null; payment_source: string | null }>;
   stats: { clients_count: number; documents_count: number; payments_due_count: number; payments_due_total: string };
   bankTransactions: Array<{ id: string; client_company_id: string; company_name: string; value_date: string; amount: string; currency: string; description: string; match_status: string; matched_payment_id: string | null }>;
@@ -250,6 +250,8 @@ export function ClientPortal({ mode }: { mode: PortalMode }) {
       issuedInvoiceId: document.issued_invoice_id,
       issuedInvoiceStatus: document.issued_invoice_status,
       issuedInvoiceError: document.issued_invoice_error,
+      vatWhitelistStatus: document.structured_data?.vat_whitelist?.status || null,
+      vatWhitelistMessage: document.structured_data?.vat_whitelist?.message || null,
     })));
   }, [production, router]);
 

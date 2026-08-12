@@ -432,5 +432,6 @@ export function parseInvoiceSummary(xml) {
     sellerNip: findNip(parsed, "Podmiot1"),
     buyerNip: findNip(parsed, "Podmiot2"),
     paymentDueDate: findFirstIsoDate(deepFind(parsed, "TerminPlatnosci")),
+    bankAccount: findFirstString(parsed, ["NrRB"]),
   };
 }
