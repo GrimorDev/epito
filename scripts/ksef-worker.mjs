@@ -32,21 +32,6 @@ async function secret(name) {
   return value;
 }
 
-// Unlike secret() above, a missing/unreadable optional secret is not fatal —
-// used for integrations (Resend) that are allowed to be unconfigured while
-// the rest of the worker keeps running.
-async function optionalSecret(name) {
-  const file = process.env[name]?.trim();
-  if (!file) return null;
-  try {
-    const value = (await readFile(file, "utf8")).trim();
-    return value || null;
-  } catch (error) {
-    console.warn(`Nie udało się odczytać ${name}`, error);
-    return null;
-  }
-}
-
 const databasePassword = await secret("DATABASE_PASSWORD_FILE");
 const redisPassword = await secret("REDIS_PASSWORD_FILE");
 const encryptionKey = Buffer.from(await secret("KSEF_ENCRYPTION_KEY_FILE"), "base64");
@@ -54,7 +39,12 @@ if (encryptionKey.length !== 32) {
   throw new Error("KSEF_ENCRYPTION_KEY_FILE must decode to exactly 32 bytes (base64)");
 }
 const uploadsRoot = path.resolve(process.env.EPITO_UPLOADS_DIR?.trim() || "/app/data/uploads");
-const resendApiKey = await optionalSecret("RESEND_API_KEY_FILE");
+// A plain env var, not a secret file, unlike KSEF_ENCRYPTION_KEY_FILE — a
+// Docker secret sourced from an environment variable requires that variable
+// to be set (even to empty) at deploy time, which broke fresh deploys before
+// this was ever configured. Optional either way: sendEmail() degrades to
+// {ok:false} without a key.
+const resendApiKey = process.env.RESEND_API_KEY?.trim() || null;
 const resendFromEmail = process.env.RESEND_FROM_EMAIL?.trim() || `powiadomienia@${process.env.EPITO_BASE_DOMAIN?.trim() || "epito.pl"}`;
 
 const pool = new Pool({

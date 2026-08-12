@@ -212,7 +212,7 @@ services:
       <<: *epito-runtime
       KSEF_ENCRYPTION_KEY_FILE: /run/secrets/ksef_encryption_key
       SUPERVISOR_EMAIL: ${EPITO_SUPERVISOR_EMAIL:?Set EPITO_SUPERVISOR_EMAIL}
-      RESEND_API_KEY_FILE: /run/secrets/resend_api_key
+      RESEND_API_KEY: ${EPITO_RESEND_API_KEY:-}
       RESEND_FROM_EMAIL: ${EPITO_RESEND_FROM_EMAIL:-}
     volumes:
       - uploads_data:/app/data/uploads
@@ -220,7 +220,6 @@ services:
       - db_password
       - redis_password
       - ksef_encryption_key
-      - resend_api_key
     depends_on:
       postgres:
         condition: service_healthy
@@ -257,8 +256,6 @@ secrets:
     file: ${EPITO_SUPERVISOR_PASSWORD_FILE:-./secrets/supervisor_password}
   ksef_encryption_key:
     file: ${EPITO_KSEF_ENCRYPTION_KEY_FILE:-./secrets/ksef_encryption_key}
-  resend_api_key:
-    file: ${EPITO_RESEND_API_KEY_FILE:-./secrets/resend_api_key}
 
 networks:
   frontend:
