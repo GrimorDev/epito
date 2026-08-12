@@ -38,16 +38,20 @@ W sekcji `Environment variables` dodaj wszystkie poniższe pozycje:
 | `EPITO_DB_PASSWORD` | inne unikalne losowe hasło techniczne, minimum 32 znaki |
 | `EPITO_REDIS_PASSWORD` | kolejne unikalne losowe hasło techniczne, minimum 32 znaki |
 | `EPITO_KSEF_ENCRYPTION_KEY` | 32 losowe bajty zakodowane w base64 (klucz AES-256-GCM do szyfrowania tokenów KSeF) — wygeneruj `node -e "console.log(require('node:crypto').randomBytes(32).toString('base64'))"` |
-| `EPITO_RESEND_API_KEY` | klucz API z konta [Resend](https://resend.com), do wysyłki automatycznych przypomnień o płatnościach — opcjonalny, można w ogóle nie dodawać tej zmiennej w Portainerze (przypomnienia po prostu się nie wyślą, worker to zaloguje) |
-| `EPITO_RESEND_FROM_EMAIL` | adres nadawcy przypomnień, np. `biuro@epito.pl` — wymaga zweryfikowanej domeny (SPF/DKIM) w panelu Resend |
-| `EPITO_RESEND_REPLY_TO` | adres, na który trafiają odpowiedzi klientów na przypomnienia, np. `support@epito.pl` — opcjonalny, zostaw puste żeby wyłączyć |
+| `EPITO_SMTP_HOST` | host SMTP skrzynki (Zimbra/OVH), np. `ssl0.ovh.net` — dokładną wartość sprawdź w panelu OVH, w konfiguracji klienta pocztowego dla tej skrzynki |
+| `EPITO_SMTP_PORT` | port SMTP, domyślnie `587` (STARTTLS) |
+| `EPITO_SMTP_SECURE` | `true` dla portu `465` (SSL/TLS od razu), inaczej zostaw `false` |
+| `EPITO_SMTP_USER` | adres skrzynki, np. `biuro@epito.pl` — z niej wysyłane są zgłoszenia pilotażu i przypomnienia o płatnościach bezpośrednio przez SMTP tej skrzynki, bez pośrednika |
+| `EPITO_SMTP_PASSWORD` | hasło tej skrzynki |
+| `EPITO_SMTP_FROM` | nadawca w nagłówku From — opcjonalny, domyślnie taki sam jak `EPITO_SMTP_USER` |
+| `EPITO_SMTP_REPLY_TO` | adres, na który trafiają odpowiedzi klientów na przypomnienia, np. `support@epito.pl` — opcjonalny, zostaw puste żeby wyłączyć |
 | `EPITO_BASE_DOMAIN` | produkcyjna domena bazowa, na przykład `epito.pl` |
 | `EPITO_PORT` | port hosta, domyślnie `8063` |
 | `EPITO_UPLOADS_VOLUME` | opcjonalna nazwa trwałego wolumenu dokumentów, domyślnie `epito-uploads-data` |
 
-Cztery hasła/klucze techniczne muszą być różne. Wygeneruj je w menedżerze haseł. Nie umieszczaj ich w repozytorium ani w pliku `.env` przesyłanym do Git.
+Pięć haseł/kluczy technicznych (`EPITO_POSTGRES_ADMIN_PASSWORD`, `EPITO_DB_PASSWORD`, `EPITO_REDIS_PASSWORD`, `EPITO_SUPERVISOR_PASSWORD`, `EPITO_KSEF_ENCRYPTION_KEY`) musi być różnych. Wygeneruj je w menedżerze haseł. `EPITO_SMTP_PASSWORD` to hasło do istniejącej już skrzynki pocztowej — nie generuj go, tylko wpisz aktualne hasło tej skrzynki. Nie umieszczaj żadnego z nich w repozytorium ani w pliku `.env` przesyłanym do Git.
 
-Compose pobiera pięć wartości z konfiguracji Portainera (cztery hasła i klucz szyfrowania KSeF) i udostępnia je kontenerom jako pliki w `/run/secrets`. Nie trafiają do zmiennych środowiskowych uruchomionych usług i nie pojawiają się w `docker inspect` kontenerów. Pozostają jednak dostępne administratorom Portainera, dlatego dostęp do stacka powinien być ograniczony do administratorów.
+Compose pobiera sześć wartości z konfiguracji Portainera (pięć haseł/kluczy technicznych i hasło skrzynki SMTP) i udostępnia je kontenerom jako pliki w `/run/secrets`. Nie trafiają do zmiennych środowiskowych uruchomionych usług i nie pojawiają się w `docker inspect` kontenerów. Pozostają jednak dostępne administratorom Portainera, dlatego dostęp do stacka powinien być ograniczony do administratorów.
 
 Pozostałe ustawienia mają bezpieczne wartości domyślne:
 
