@@ -21,6 +21,7 @@ import {
 import { checkNipBankAccount } from "./lib/whitelist-client.mjs";
 import { sendEmail } from "./lib/resend-client.mjs";
 import { buildReminderEmailHtml, taxTypeLabel } from "./lib/reminder-email.mjs";
+import { buildLeadNotificationEmailHtml } from "./lib/lead-email.mjs";
 
 const { Pool } = pg;
 
@@ -46,6 +47,9 @@ const uploadsRoot = path.resolve(process.env.EPITO_UPLOADS_DIR?.trim() || "/app/
 // {ok:false} without a key.
 const resendApiKey = process.env.RESEND_API_KEY?.trim() || null;
 const resendFromEmail = process.env.RESEND_FROM_EMAIL?.trim() || `powiadomienia@${process.env.EPITO_BASE_DOMAIN?.trim() || "epito.pl"}`;
+// Reminders go to real client companies who sometimes reply — route those
+// replies to a monitored support inbox instead of the unmonitored sender.
+const resendReplyTo = process.env.RESEND_REPLY_TO?.trim() || null;
 
 const pool = new Pool({
   host: process.env.DATABASE_HOST,
@@ -814,6 +818,7 @@ async function handlePaymentReminders() {
       to: row.company_email,
       subject: `Przypomnienie: ${taxTypeLabel(row.tax_type)} — termin za ${daysUntilDue} dni`,
       html,
+      replyTo: resendReplyTo,
     });
     if (outcome.ok) {
       await withUser(supervisorUserId, (client) =>
@@ -828,11 +833,37 @@ async function handlePaymentReminders() {
   }
 }
 
+// No RLS/tenant context needed — nothing here reads or writes any
+// tenant-scoped table, just formats and sends one email to the business
+// inbox that receives marketing leads (RESEND_FROM_EMAIL doubles as both
+// sender and recipient here; replyTo is the lead's own address so a human
+// can just hit reply instead of copy-pasting it).
+async function handleLeadNotify(job) {
+  const { name, email, companiesRange } = job.data.payload || {};
+  if (!name || !email) {
+    console.warn("Pominięto zgłoszenie pilotażu bez imienia/e-maila", job.data.payload);
+    return;
+  }
+  const html = buildLeadNotificationEmailHtml({ name, email, companiesRange });
+  const outcome = await sendEmail({
+    apiKey: resendApiKey,
+    from: resendFromEmail,
+    to: resendFromEmail,
+    subject: `Nowe zgłoszenie pilotażu: ${name}`,
+    html,
+    replyTo: email,
+  });
+  if (!outcome.ok) {
+    console.warn(`Nie udało się wysłać powiadomienia o zgłoszeniu pilotażu (${email}): ${outcome.error}`);
+  }
+}
+
 async function processJob(job) {
   if (job.name === "ksef.sync") return handleKsefSync(job);
   if (job.name === "invoice.issue") return handleInvoiceIssue(job);
   if (job.name === "whitelist.verify") return handleWhitelistVerify(job);
   if (job.name === "payment.remind") return handlePaymentReminders(job);
+  if (job.name === "lead.notify") return handleLeadNotify(job);
 }
 
 const worker = new Worker("integrations", processJob, {

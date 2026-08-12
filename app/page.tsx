@@ -60,13 +60,36 @@ const faqSchema = {
 export default function Home() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [sent, setSent] = useState(false);
+  const [pilotPending, setPilotPending] = useState(false);
+  const [pilotError, setPilotError] = useState("");
   const reduceMotion = useReducedMotion();
   const { scrollYProgress } = useScroll();
   const heroParallax = useTransform(scrollYProgress, [0, 0.24], [0, 72]);
 
-  function submitPilot(event: FormEvent<HTMLFormElement>) {
+  async function submitPilot(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setSent(true);
+    setPilotError("");
+    const form = new FormData(event.currentTarget);
+    setPilotPending(true);
+    try {
+      const response = await fetch("/api/marketing/pilot", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: form.get("name"),
+          email: form.get("email"),
+          clients: form.get("clients"),
+          website: form.get("website"),
+        }),
+      });
+      const payload = (await response.json()) as { error?: string };
+      if (!response.ok) throw new Error(payload.error || "Nie udało się wysłać zgłoszenia.");
+      setSent(true);
+    } catch (reason) {
+      setPilotError(reason instanceof Error ? reason.message : "Nie udało się wysłać zgłoszenia.");
+    } finally {
+      setPilotPending(false);
+    }
   }
 
   const reveal = {
@@ -264,13 +287,15 @@ export default function Home() {
           <p>Zostaw kontakt. W 20 minut pokażemy Ci demo i sprawdzimy, czy Epito pasuje do pracy Twojego biura.</p>
         </motion.div>
         {sent ? (
-          <motion.div className="form-success" role="status" initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }}><span><Check size={22} /></span><div><strong>Dziękujemy!</strong><p>Zgłoszenie demonstracyjne zostało zapisane. W wersji produkcyjnej trafi do zespołu Epito.</p></div></motion.div>
+          <motion.div className="form-success" role="status" initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }}><span><Check size={22} /></span><div><strong>Dziękujemy!</strong><p>Zgłoszenie zostało wysłane do zespołu Epito. Odezwiemy się na podany adres e-mail.</p></div></motion.div>
         ) : (
           <motion.form className="pilot-form" onSubmit={submitPilot} initial={{ opacity: 0, y: reduceMotion ? 0 : 30 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, amount: 0.3 }} transition={{ duration: reduceMotion ? 0 : 0.58 }}>
             <label>Imię i nazwisko<input required name="name" placeholder="Anna Kowalska" autoComplete="name" /></label>
             <label>E-mail służbowy<input required type="email" name="email" placeholder="anna@twojebiuro.pl" autoComplete="email" /></label>
             <label>Liczba obsługiwanych firm<select name="clients" defaultValue="31-100"><option>do 30</option><option>31-100</option><option>powyżej 100</option></select></label>
-            <button className="button button-primary button-wide" type="submit">Chcę zobaczyć Epito <ArrowRight size={19} /></button>
+            <input name="website" tabIndex={-1} autoComplete="off" aria-hidden="true" style={{ position: "absolute", left: "-9999px", width: 1, height: 1, opacity: 0 }} />
+            {pilotError ? <p className="form-error">{pilotError}</p> : null}
+            <button className="button button-primary button-wide" type="submit" disabled={pilotPending}>{pilotPending ? "Wysyłanie…" : "Chcę zobaczyć Epito"} <ArrowRight size={19} /></button>
             <small>Bez zobowiązań. Najpierw krótka rozmowa i dopasowane demo.</small>
           </motion.form>
         )}

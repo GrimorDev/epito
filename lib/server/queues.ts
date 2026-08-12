@@ -16,7 +16,8 @@ export type BackgroundJob = {
     | "invoice.issue"
     | "payment.reconcile"
     | "whitelist.verify"
-    | "payment.remind";
+    | "payment.remind"
+    | "lead.notify";
   payload: Record<string, unknown>;
   createdAt: string;
 };
@@ -104,6 +105,20 @@ export async function enqueueWhitelistVerify(documentId: string, tenantId: strin
     actorUserId,
     type: "whitelist.verify",
     payload: { documentId },
+    createdAt: new Date().toISOString(),
+  });
+}
+
+// The marketing site's pilot-request form has no session/tenant — this is
+// the only enqueue call in the app that runs for a genuinely anonymous
+// visitor. tenantId is set to "" (not omitted) to satisfy BackgroundJob's
+// shape; handleLeadNotify never touches app.current_tenant_id.
+export async function enqueueLeadNotification(payload: { name: string; email: string; companiesRange: string }) {
+  await enqueueBackgroundJob("integrations", {
+    tenantId: "",
+    actorUserId: null,
+    type: "lead.notify",
+    payload,
     createdAt: new Date().toISOString(),
   });
 }
