@@ -46,6 +46,9 @@ const uploadsRoot = path.resolve(process.env.EPITO_UPLOADS_DIR?.trim() || "/app/
 // {ok:false} without a key.
 const resendApiKey = process.env.RESEND_API_KEY?.trim() || null;
 const resendFromEmail = process.env.RESEND_FROM_EMAIL?.trim() || `powiadomienia@${process.env.EPITO_BASE_DOMAIN?.trim() || "epito.pl"}`;
+// Reminders go to real client companies who sometimes reply — route those
+// replies to a monitored support inbox instead of the unmonitored sender.
+const resendReplyTo = process.env.RESEND_REPLY_TO?.trim() || null;
 
 const pool = new Pool({
   host: process.env.DATABASE_HOST,
@@ -814,6 +817,7 @@ async function handlePaymentReminders() {
       to: row.company_email,
       subject: `Przypomnienie: ${taxTypeLabel(row.tax_type)} — termin za ${daysUntilDue} dni`,
       html,
+      replyTo: resendReplyTo,
     });
     if (outcome.ok) {
       await withUser(supervisorUserId, (client) =>

@@ -14,7 +14,7 @@ function safeJsonParse(text) {
 
 // Never throws — a single failed send shouldn't crash the daily reminder
 // scan, just skip that one email and let the caller log/continue.
-export async function sendEmail({ apiKey, from, to, subject, html }) {
+export async function sendEmail({ apiKey, from, to, subject, html, replyTo }) {
   if (!apiKey) return { ok: false, error: "Brak klucza API Resend." };
   let response;
   let body = null;
@@ -25,7 +25,7 @@ export async function sendEmail({ apiKey, from, to, subject, html }) {
         Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ from, to, subject, html }),
+      body: JSON.stringify({ from, to, subject, html, ...(replyTo ? { reply_to: replyTo } : {}) }),
     });
     const text = await response.text();
     body = text ? safeJsonParse(text) : null;

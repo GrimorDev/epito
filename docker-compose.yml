@@ -217,6 +217,7 @@ services:
       SUPERVISOR_EMAIL: ${EPITO_SUPERVISOR_EMAIL:?Set EPITO_SUPERVISOR_EMAIL in Portainer}
       RESEND_API_KEY: ${EPITO_RESEND_API_KEY:-}
       RESEND_FROM_EMAIL: ${EPITO_RESEND_FROM_EMAIL:-}
+      RESEND_REPLY_TO: ${EPITO_RESEND_REPLY_TO:-}
     volumes:
       - uploads_data:/app/data/uploads
     secrets:

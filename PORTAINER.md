@@ -39,7 +39,8 @@ W sekcji `Environment variables` dodaj wszystkie poniższe pozycje:
 | `EPITO_REDIS_PASSWORD` | kolejne unikalne losowe hasło techniczne, minimum 32 znaki |
 | `EPITO_KSEF_ENCRYPTION_KEY` | 32 losowe bajty zakodowane w base64 (klucz AES-256-GCM do szyfrowania tokenów KSeF) — wygeneruj `node -e "console.log(require('node:crypto').randomBytes(32).toString('base64'))"` |
 | `EPITO_RESEND_API_KEY` | klucz API z konta [Resend](https://resend.com), do wysyłki automatycznych przypomnień o płatnościach — opcjonalny, można w ogóle nie dodawać tej zmiennej w Portainerze (przypomnienia po prostu się nie wyślą, worker to zaloguje) |
-| `EPITO_RESEND_FROM_EMAIL` | adres nadawcy przypomnień, np. `powiadomienia@epito.pl` — wymaga zweryfikowanej domeny (SPF/DKIM) w panelu Resend |
+| `EPITO_RESEND_FROM_EMAIL` | adres nadawcy przypomnień, np. `biuro@epito.pl` — wymaga zweryfikowanej domeny (SPF/DKIM) w panelu Resend |
+| `EPITO_RESEND_REPLY_TO` | adres, na który trafiają odpowiedzi klientów na przypomnienia, np. `support@epito.pl` — opcjonalny, zostaw puste żeby wyłączyć |
 | `EPITO_BASE_DOMAIN` | produkcyjna domena bazowa, na przykład `epito.pl` |
 | `EPITO_PORT` | port hosta, domyślnie `8063` |
 | `EPITO_UPLOADS_VOLUME` | opcjonalna nazwa trwałego wolumenu dokumentów, domyślnie `epito-uploads-data` |
