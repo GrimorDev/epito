@@ -6,6 +6,7 @@ import { ChangeEvent, CSSProperties, useCallback, useEffect, useState } from "re
 import { AnimatePresence, motion } from "framer-motion";
 import { DocumentImportModal, DocumentsWorkspace, IssueInvoiceModal, SettingsWorkspace, TeamWorkspace, type WorkspaceDocument } from "./workspace-sections";
 import { isPlatformStaff, platformRoleLabels, type PlatformRole } from "@/lib/platform-access";
+import { canAccessOffice as canAccessOfficeRole, canManageTeam as canManageTeamRole, canViewFinancials } from "@/lib/tenant-access";
 import {
   ArrowLeft,
   ArrowRight,
@@ -284,7 +285,9 @@ export function ClientPortal({ mode }: { mode: PortalMode }) {
   const duePayments = payments.filter((payment) => payablePaymentStatuses.includes(payment.status));
   const nextPayment = duePayments[0];
   const platformOperator = isPlatformStaff(session?.platformRole);
-  const canAccessOffice = platformOperator || ["owner", "admin", "accountant"].includes(session?.membershipRole || "");
+  const canAccessOffice = !production || canAccessOfficeRole(session?.membershipRole, session?.platformRole);
+  const canManageTeamAndSettings = !production || canManageTeamRole(session?.membershipRole, session?.platformRole);
+  const canViewPayments = !production || canViewFinancials(session?.membershipRole, session?.platformRole);
   const actionDocumentsList = documents.filter((document) => document.statusCode ? document.statusCode !== "verified" : document.status !== "Przetworzone");
   const newDuePayments = duePayments.filter((payment) => !seenNotificationIds.payments.includes(String(payment.id)));
   const newActionDocuments = actionDocumentsList.filter((document) => !seenNotificationIds.documents.includes(String(document.id)));
@@ -303,11 +306,10 @@ export function ClientPortal({ mode }: { mode: PortalMode }) {
 
   const navigation: { label: Section; icon: LucideIcon; badge?: string }[] = [
     { label: "Pulpit", icon: LayoutDashboard },
-    { label: "Płatności", icon: CreditCard, badge: String(duePayments.length) },
+    ...(canViewPayments ? [{ label: "Płatności" as Section, icon: CreditCard, badge: String(duePayments.length) }] : []),
     { label: "Dokumenty", icon: FileText, badge: String(documents.filter((document) => document.statusCode ? document.statusCode !== "verified" : document.status !== "Przetworzone").length) },
     { label: "Wiadomości", icon: MessageSquareText, badge: production ? undefined : "1" },
-    { label: "Zespół", icon: Users },
-    { label: "Ustawienia", icon: Settings },
+    ...(canManageTeamAndSettings ? [{ label: "Zespół" as Section, icon: Users }, { label: "Ustawienia" as Section, icon: Settings }] : []),
   ];
 
   function selectSection(value: Section) {
@@ -648,7 +650,7 @@ export function ClientPortal({ mode }: { mode: PortalMode }) {
                 </>
               )}
 
-              {section === "Płatności" && (
+              {section === "Płatności" && canViewPayments && (
                 <section className="subpage">
                   <div className="page-heading"><div><p>Rozliczenia</p><h1>Płatności</h1><span>Kwoty przygotowane przez Twoje biuro rachunkowe.</span></div></div>
                   <div className="subpage-summary">
@@ -720,9 +722,9 @@ export function ClientPortal({ mode }: { mode: PortalMode }) {
                 </section>
               ) : null}
 
-              {section === "Zespół" && <TeamWorkspace initialMembers={production ? productionTeam : undefined} organizationName={companyName} production={production} onChanged={loadProductionData} />}
+              {section === "Zespół" && canManageTeamAndSettings && <TeamWorkspace initialMembers={production ? productionTeam : undefined} organizationName={companyName} production={production} onChanged={loadProductionData} />}
 
-              {section === "Ustawienia" && <SettingsWorkspace production={production} organization={overview ? { displayName: overview.tenant.display_name, legalName: overview.tenant.legal_name, nip: overview.tenant.nip, slug: overview.tenant.slug, settings: overview.tenant.settings } : undefined} onChanged={loadProductionData} />}
+              {section === "Ustawienia" && canManageTeamAndSettings && <SettingsWorkspace production={production} organization={overview ? { displayName: overview.tenant.display_name, legalName: overview.tenant.legal_name, nip: overview.tenant.nip, slug: overview.tenant.slug, settings: overview.tenant.settings } : undefined} onChanged={loadProductionData} />}
             </motion.div>
           </AnimatePresence>
         </div>
