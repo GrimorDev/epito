@@ -33,11 +33,10 @@ export async function GET(request: NextRequest, context: Context) {
       body: string;
       created_at: string;
     }>(
-      `select message.id, message.sender_type, user_row.full_name as sender_name, message.body, message.created_at
-       from support_messages message
-       join users user_row on user_row.id = message.sender_user_id
-       where message.ticket_id = $1
-       order by message.created_at asc`,
+      `select id, sender_type, sender_name, body, created_at
+       from support_messages
+       where ticket_id = $1
+       order by created_at asc`,
       [ticketId],
     );
 
@@ -75,8 +74,8 @@ export async function POST(request: NextRequest, context: Context) {
     if (!ticket) return false;
 
     await client.query(
-      "insert into support_messages (ticket_id, tenant_id, sender_user_id, sender_type, body) values ($1, $2, $3, 'staff', $4)",
-      [ticketId, ticket.tenant_id, session.userId, message],
+      "insert into support_messages (ticket_id, tenant_id, sender_user_id, sender_type, sender_name, body) values ($1, $2, $3, 'staff', $4, $5)",
+      [ticketId, ticket.tenant_id, session.userId, session.fullName, message],
     );
     await client.query(
       "update support_tickets set last_message_at = now(), last_message_by = 'staff', staff_last_read_at = now(), updated_at = now() where id = $1",

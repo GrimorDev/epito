@@ -63,8 +63,8 @@ export async function POST(request: NextRequest) {
     );
     const ticketId = created.rows[0].id;
     await client.query(
-      "insert into support_messages (ticket_id, tenant_id, sender_user_id, sender_type, body) values ($1, $2, $3, 'client', $4)",
-      [ticketId, session.tenantId, session.userId, message],
+      "insert into support_messages (ticket_id, tenant_id, sender_user_id, sender_type, sender_name, body) values ($1, $2, $3, 'client', $4, $5)",
+      [ticketId, session.tenantId, session.userId, session.fullName, message],
     );
     return { id: ticketId };
   });

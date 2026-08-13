@@ -402,7 +402,7 @@ export default function SupervisorPage() {
                 {section === "organizations" ? <TenantsPanel tenants={tenants} onOpen={openTenant} onCreate={() => setModal("tenant")} canCreate={canCreateOrganizations} pendingAccess={pendingAccess} /> : null}
                 {section === "organizationUsers" ? <OrganizationUsers groups={organizationGroups} search={search} onSearch={setSearch} expandedTenant={expandedTenant} onToggle={(tenantId) => setExpandedTenant((current) => current === tenantId ? "" : tenantId)} canManage={canManageTeam} pendingAccess={pendingAccess} onUpdate={updateMembership} /> : null}
                 {section === "platformTeam" ? <PlatformTeam users={platformTeam} currentUserId={session?.email || ""} canManage={canManageTeam} pendingAccess={pendingAccess} onCreate={() => setModal("staff")} onUpdate={updatePlatformAccess} /> : null}
-                {section === "support" ? <SupportSection /> : null}
+                {section === "support" ? <SupportSection dark={theme === "dark"} /> : null}
                 {section === "settings" ? <SettingsSection session={session} /> : null}
               </motion.div>
             </div>
@@ -504,7 +504,7 @@ function supportTimeLabel(value: string) {
 // tenant's support tickets without impersonating that tenant first. Polls
 // every few seconds rather than a live connection, same tradeoff as the
 // client-side SupportWorkspace in app/panel/workspace-sections.tsx.
-function SupportSection() {
+function SupportSection({ dark }: { dark: boolean }) {
   const [tickets, setTickets] = useState<SupportTicket[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [thread, setThread] = useState<SupportThread | null>(null);
@@ -601,7 +601,7 @@ function SupportSection() {
   const selectedTicket = tickets.find((ticket) => ticket.id === selectedId) || null;
 
   return (
-    <section>
+    <section className={dark ? "theme-dark" : undefined}>
       {loading ? (
         <div className={styles.loading}>Ładowanie zgłoszeń…</div>
       ) : tickets.length === 0 ? (
