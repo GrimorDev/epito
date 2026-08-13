@@ -402,7 +402,7 @@ export default function SupervisorPage() {
                 {section === "organizations" ? <TenantsPanel tenants={tenants} onOpen={openTenant} onCreate={() => setModal("tenant")} canCreate={canCreateOrganizations} pendingAccess={pendingAccess} /> : null}
                 {section === "organizationUsers" ? <OrganizationUsers groups={organizationGroups} search={search} onSearch={setSearch} expandedTenant={expandedTenant} onToggle={(tenantId) => setExpandedTenant((current) => current === tenantId ? "" : tenantId)} canManage={canManageTeam} pendingAccess={pendingAccess} onUpdate={updateMembership} /> : null}
                 {section === "platformTeam" ? <PlatformTeam users={platformTeam} currentUserId={session?.email || ""} canManage={canManageTeam} pendingAccess={pendingAccess} onCreate={() => setModal("staff")} onUpdate={updatePlatformAccess} /> : null}
-                {section === "support" ? <SupportSection dark={theme === "dark"} /> : null}
+                {section === "support" ? <SupportSection /> : null}
                 {section === "settings" ? <SettingsSection session={session} /> : null}
               </motion.div>
             </div>
@@ -504,7 +504,7 @@ function supportTimeLabel(value: string) {
 // tenant's support tickets without impersonating that tenant first. Polls
 // every few seconds rather than a live connection, same tradeoff as the
 // client-side SupportWorkspace in app/panel/workspace-sections.tsx.
-function SupportSection({ dark }: { dark: boolean }) {
+function SupportSection() {
   const [tickets, setTickets] = useState<SupportTicket[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [thread, setThread] = useState<SupportThread | null>(null);
@@ -601,40 +601,40 @@ function SupportSection({ dark }: { dark: boolean }) {
   const selectedTicket = tickets.find((ticket) => ticket.id === selectedId) || null;
 
   return (
-    <section className={dark ? "theme-dark" : undefined}>
+    <section>
       {loading ? (
         <div className={styles.loading}>Ładowanie zgłoszeń…</div>
       ) : tickets.length === 0 ? (
         <Empty icon={MessageCircle} title="Brak zgłoszeń" text="Żadna organizacja klienta nie napisała jeszcze do biura." />
       ) : (
-        <div className="messages-layout">
-          <aside>
+        <div className={admin.supportLayout}>
+          <aside className={admin.supportSidebar}>
             {tickets.map((ticket) => (
-              <button key={ticket.id} className={ticket.id === selectedId ? "active" : ""} onClick={() => setSelectedId(ticket.id)}>
-                <span className="advisor-avatar small">{initials(ticket.tenant_name)}</span>
+              <button key={ticket.id} className={admin.supportSidebarItem} data-active={ticket.id === selectedId} onClick={() => setSelectedId(ticket.id)}>
+                <span className={admin.supportAvatar}>{initials(ticket.tenant_name)}</span>
                 <div><strong>{ticket.tenant_name}</strong><small>{ticket.subject}</small></div>
-                {ticket.unread ? <b>•</b> : null}
+                {ticket.unread ? <span className={admin.supportUnreadDot} /> : null}
               </button>
             ))}
           </aside>
           {selectedTicket && thread ? (
-            <article className="chat-card">
-              <header>
-                <span className="advisor-avatar small">{initials(thread.ticket.tenant_name)}</span>
+            <article className={admin.supportThread}>
+              <header className={admin.supportThreadHeader}>
+                <span className={admin.supportAvatar}>{initials(thread.ticket.tenant_name)}</span>
                 <div><strong>{thread.ticket.tenant_name}</strong><small>{thread.ticket.subject}</small></div>
                 <button type="button" className={styles.buttonGhost} onClick={() => void toggleStatus()} disabled={statusPending}>
                   {thread.ticket.status === "closed" ? "Otwórz ponownie" : "Zamknij zgłoszenie"}
                 </button>
               </header>
-              <div className="chat-body">
+              <div className={admin.supportMessages}>
                 {thread.messages.map((message) => (
-                  <div key={message.id} className={`chat-message ${message.sender_type === "staff" ? "outgoing" : "incoming"}`}>
+                  <div key={message.id} className={`${admin.supportMessage} ${message.sender_type === "staff" ? admin.supportMessageOutgoing : admin.supportMessageIncoming}`}>
                     <p>{message.body}</p>
                     <small>{message.sender_name} · {supportTimeLabel(message.created_at)}</small>
                   </div>
                 ))}
               </div>
-              <footer>
+              <footer className={admin.supportComposer}>
                 <input
                   aria-label="Treść odpowiedzi"
                   placeholder={thread.ticket.status === "closed" ? "Otwórz zgłoszenie ponownie, żeby odpowiedzieć" : "Napisz odpowiedź"}
