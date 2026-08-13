@@ -959,6 +959,10 @@ function ticketTimeLabel(value: string) {
   return new Date(value).toLocaleString("pl-PL", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 }
 
+function initials(value: string) {
+  return value.split(/\s+/).filter(Boolean).map((part) => part[0]).join("").slice(0, 2).toUpperCase() || "?";
+}
+
 // Polls every few seconds rather than pushing over a live connection —
 // mirrors the existing 4s document-processing poll in ClientPortal, no new
 // realtime infrastructure needed for a business-messaging use case where a
@@ -966,6 +970,22 @@ function ticketTimeLabel(value: string) {
 const SUPPORT_POLL_MS = 5_000;
 
 export function SupportWorkspace() {
+  const [tab, setTab] = useState<"office" | "team">("office");
+  return (
+    <section className="subpage messages-page">
+      <div className="page-heading">
+        <div><p>Kontakt</p><h1>Wiadomości</h1><span>Zgłoszenia do biura i rozmowy z zespołem, w jednym miejscu.</span></div>
+        <nav className="messages-tab-switch" aria-label="Wybierz rodzaj wiadomości">
+          <button className={tab === "office" ? "active" : ""} onClick={() => setTab("office")}>Biuro</button>
+          <button className={tab === "team" ? "active" : ""} onClick={() => setTab("team")}>Zespół</button>
+        </nav>
+      </div>
+      {tab === "office" ? <SupportTicketsPanel /> : <InternalChatPanel />}
+    </section>
+  );
+}
+
+function SupportTicketsPanel() {
   const [tickets, setTickets] = useState<SupportTicket[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [thread, setThread] = useState<SupportThread | null>(null);
@@ -1090,9 +1110,8 @@ export function SupportWorkspace() {
   const selectedTicket = tickets.find((ticket) => ticket.id === selectedId) || null;
 
   return (
-    <section className="subpage messages-page">
-      <div className="page-heading">
-        <div><p>Kontakt z biurem</p><h1>Wiadomości</h1><span>Wszystkie ustalenia w jednym miejscu.</span></div>
+    <>
+      <div className="messages-panel-toolbar">
         <button className="upload-button" onClick={() => setNewTicketOpen(true)}><Plus size={18} /> Nowe zgłoszenie</button>
       </div>
 
@@ -1166,6 +1185,214 @@ export function SupportWorkspace() {
           </motion.div>
         )}
       </AnimatePresence>
-    </section>
+    </>
+  );
+}
+
+type TeamContact = { id: string; full_name: string; role: string };
+type InternalConversation = {
+  id: string;
+  other_user_id: string;
+  other_user_name: string;
+  last_message_at: string;
+  unread: boolean;
+  last_message_preview: string | null;
+};
+type InternalMessage = { id: string; sender_user_id: string; sender_name: string; body: string; created_at: string };
+type InternalThread = { conversation: { id: string; other_user_id: string; other_user_name: string }; messages: InternalMessage[] };
+
+// Private 1:1 messages between two members of the same team — no Epito
+// staff involved at all, distinct from SupportTicketsPanel above.
+function InternalChatPanel() {
+  const [conversations, setConversations] = useState<InternalConversation[]>([]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [thread, setThread] = useState<InternalThread | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [composeText, setComposeText] = useState("");
+  const [sending, setSending] = useState(false);
+  const [newChatOpen, setNewChatOpen] = useState(false);
+  const [contacts, setContacts] = useState<TeamContact[]>([]);
+  const [contactsLoaded, setContactsLoaded] = useState(false);
+  const [selectedContactId, setSelectedContactId] = useState("");
+  const [newMessage, setNewMessage] = useState("");
+  const [creating, setCreating] = useState(false);
+  const [error, setError] = useState("");
+
+  const loadConversations = useCallback(async () => {
+    const response = await fetch("/api/workspace/internal-messages/conversations", { cache: "no-store" });
+    if (!response.ok) return;
+    const payload = (await response.json()) as { conversations: InternalConversation[] };
+    setConversations(payload.conversations);
+    setSelectedId((current) => current ?? payload.conversations[0]?.id ?? null);
+  }, []);
+
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(() => {
+      void loadConversations().finally(() => setLoading(false));
+    });
+    const timer = window.setInterval(() => void loadConversations(), SUPPORT_POLL_MS);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.clearInterval(timer);
+    };
+  }, [loadConversations]);
+
+  useEffect(() => {
+    if (!selectedId) {
+      const frame = window.requestAnimationFrame(() => setThread(null));
+      return () => window.cancelAnimationFrame(frame);
+    }
+    let cancelled = false;
+    async function loadThread() {
+      const response = await fetch(`/api/workspace/internal-messages/conversations/${selectedId}/messages`, { cache: "no-store" });
+      if (!response.ok || cancelled) return;
+      const payload = (await response.json()) as InternalThread;
+      if (!cancelled) setThread(payload);
+    }
+    const frame = window.requestAnimationFrame(() => void loadThread());
+    const timer = window.setInterval(() => void loadThread(), SUPPORT_POLL_MS);
+    return () => {
+      cancelled = true;
+      window.cancelAnimationFrame(frame);
+      window.clearInterval(timer);
+    };
+  }, [selectedId]);
+
+  async function openNewChat() {
+    setNewChatOpen(true);
+    if (contactsLoaded) return;
+    const response = await fetch("/api/workspace/internal-messages/contacts", { cache: "no-store" });
+    if (response.ok) {
+      const payload = (await response.json()) as { contacts: TeamContact[] };
+      setContacts(payload.contacts);
+    }
+    setContactsLoaded(true);
+  }
+
+  async function sendReply() {
+    if (!selectedId || !composeText.trim()) return;
+    setSending(true);
+    setError("");
+    try {
+      const response = await fetch(`/api/workspace/internal-messages/conversations/${selectedId}/messages`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: composeText.trim() }),
+      });
+      const payload = (await response.json()) as { error?: string };
+      if (!response.ok) throw new Error(payload.error || "Nie udało się wysłać wiadomości.");
+      setComposeText("");
+      await Promise.all([loadConversations(), (async () => {
+        const threadResponse = await fetch(`/api/workspace/internal-messages/conversations/${selectedId}/messages`, { cache: "no-store" });
+        if (threadResponse.ok) setThread((await threadResponse.json()) as InternalThread);
+      })()]);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Nie udało się wysłać wiadomości.");
+    } finally {
+      setSending(false);
+    }
+  }
+
+  async function startConversation() {
+    if (!selectedContactId || !newMessage.trim()) return;
+    setCreating(true);
+    setError("");
+    try {
+      const response = await fetch("/api/workspace/internal-messages/conversations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: selectedContactId, message: newMessage.trim() }),
+      });
+      const payload = (await response.json()) as { error?: string; conversationId?: string };
+      if (!response.ok) throw new Error(payload.error || "Nie udało się rozpocząć rozmowy.");
+      setSelectedContactId("");
+      setNewMessage("");
+      setNewChatOpen(false);
+      await loadConversations();
+      if (payload.conversationId) setSelectedId(payload.conversationId);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Nie udało się rozpocząć rozmowy.");
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  const selectedConversation = conversations.find((conversation) => conversation.id === selectedId) || null;
+
+  return (
+    <>
+      <div className="messages-panel-toolbar">
+        <button className="upload-button" onClick={() => void openNewChat()}><Plus size={18} /> Nowa rozmowa</button>
+      </div>
+
+      {loading ? (
+        <div className="panel-card portal-empty-state"><MessageSquareText size={34} /><h3>Wczytywanie</h3><p>Ładowanie wiadomości…</p></div>
+      ) : conversations.length === 0 ? (
+        <div className="panel-card portal-empty-state"><MessageSquareText size={34} /><h3>Brak rozmów</h3><p>Nie masz jeszcze rozmów z zespołem — kliknij &quot;Nowa rozmowa&quot;, żeby napisać do kogoś.</p></div>
+      ) : (
+        <div className="messages-layout">
+          <aside>
+            {conversations.map((conversation) => (
+              <button key={conversation.id} className={conversation.id === selectedId ? "active" : ""} onClick={() => setSelectedId(conversation.id)}>
+                <span className="advisor-avatar small">{initials(conversation.other_user_name)}</span>
+                <div><strong>{conversation.other_user_name}</strong><small>{conversation.last_message_preview || "Brak wiadomości"}</small></div>
+                {conversation.unread ? <b>•</b> : null}
+              </button>
+            ))}
+          </aside>
+          {selectedConversation && thread ? (
+            <article className="chat-card">
+              <header>
+                <span className="advisor-avatar small">{initials(thread.conversation.other_user_name)}</span>
+                <div><strong>{thread.conversation.other_user_name}</strong></div>
+              </header>
+              <div className="chat-body">
+                {thread.messages.map((message) => (
+                  <div key={message.id} className={`chat-message ${message.sender_user_id === thread.conversation.other_user_id ? "incoming" : "outgoing"}`}>
+                    <p>{message.body}</p>
+                    <small>{message.sender_name} · {ticketTimeLabel(message.created_at)}</small>
+                  </div>
+                ))}
+              </div>
+              <footer>
+                <input
+                  aria-label="Treść wiadomości"
+                  placeholder="Napisz wiadomość"
+                  value={composeText}
+                  onChange={(event) => setComposeText(event.target.value)}
+                  onKeyDown={(event) => { if (event.key === "Enter") void sendReply(); }}
+                  disabled={sending}
+                />
+                <button onClick={() => void sendReply()} disabled={sending || !composeText.trim()}>{sending ? "Wysyłanie" : "Wyślij"} <Send size={16} /></button>
+              </footer>
+            </article>
+          ) : null}
+        </div>
+      )}
+
+      {error ? <div className="team-notice">{error}</div> : null}
+
+      <AnimatePresence>
+        {newChatOpen && (
+          <motion.div className="modal-backdrop" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+            <motion.div className="invite-modal" initial={{ opacity: 0, scale: 0.96, y: 14 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.97 }}>
+              <button className="modal-close" onClick={() => setNewChatOpen(false)}><X size={22} /></button>
+              <span className="modal-kicker">NOWA ROZMOWA</span>
+              <h2>Napisz do współpracownika</h2>
+              <p>Wybierz osobę z zespołu i napisz pierwszą wiadomość.</p>
+              <label>Osoba
+                <select value={selectedContactId} onChange={(event) => setSelectedContactId(event.target.value)}>
+                  <option value="">Wybierz osobę</option>
+                  {contacts.map((contact) => <option key={contact.id} value={contact.id}>{contact.full_name}</option>)}
+                </select>
+              </label>
+              <label>Wiadomość<textarea value={newMessage} onChange={(event) => setNewMessage(event.target.value)} rows={4} maxLength={4000} /></label>
+              {error ? <div className="demo-notice">{error}</div> : null}
+              <button className="button button-primary button-wide" onClick={() => void startConversation()} disabled={creating || !selectedContactId || !newMessage.trim()}>{creating ? "Wysyłanie" : "Wyślij wiadomość"}</button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </>
   );
 }

@@ -356,6 +356,10 @@ button { color: inherit; }
 .doc-status { width: fit-content; border-radius: 20px; padding: 6px 8px; font-size: 7px; font-weight: 750; }
 .doc-status.done { background: #eaf5e8; color: #57936b; }.doc-status.pending { background: #fff5d9; color: #b08333; }.doc-status.missing { background: #fff0e9; color: #c66952; }
 .documents-table div > button { border: 0; background: none; color: #869591; cursor: pointer; }
+.messages-tab-switch { display: flex; gap: 4px; background: #eef2ec; border-radius: 9px; padding: 4px; }
+.messages-tab-switch button { border: 0; background: none; border-radius: 6px; padding: 8px 14px; font-size: 9px; font-weight: 750; color: #62766f; cursor: pointer; }
+.messages-tab-switch button.active { background: #fff; color: var(--ink); box-shadow: 0 1px 2px rgba(0,0,0,.08); }
+.messages-panel-toolbar { display: flex; justify-content: flex-end; margin-bottom: 14px; }
 .messages-layout { display: grid; grid-template-columns: 250px 1fr; min-height: 570px; background: #fff; border: 1px solid #e0e6df; border-radius: 10px; overflow: hidden; }
 .messages-layout > aside { border-right: 1px solid #e5e9e4; padding: 12px; }
 .messages-layout > aside button { width: 100%; border: 0; background: #f0f5ed; border-radius: 7px; padding: 12px; display: flex; align-items: center; gap: 10px; text-align: left; }
@@ -828,6 +832,9 @@ button { color: inherit; }
 .theme-dark .chat-card footer input,
 .theme-dark .blik-field input { background: #0f1817; color: #e8efec; border-color: #344440; }
 .theme-dark .closed-ticket-footer span { color: #93a5a0; }
+.theme-dark .messages-tab-switch { background: #182422; }
+.theme-dark .messages-tab-switch button { color: #93a5a0; }
+.theme-dark .messages-tab-switch button.active { background: #27483f; color: #fff; box-shadow: none; }
 .theme-dark .modal-amount { background: #182522; }
 .theme-dark .payment-modal fieldset label { border-color: #344440; }
 .theme-dark .payment-modal fieldset label.selected { background: #1c2d24; border-color: #90b95b; }
