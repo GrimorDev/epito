@@ -20,9 +20,11 @@ import {
   LockKeyhole,
   LogOut,
   Menu,
+  MessageCircle,
   Moon,
   Plus,
   Search,
+  Send,
   Settings,
   ShieldCheck,
   Sun,
@@ -46,7 +48,7 @@ import styles from "../secure.module.css";
 import admin from "./supervisor.module.css";
 
 type Session = { fullName: string; email: string; platformRole: PlatformRole };
-type Section = "overview" | "organizations" | "organizationUsers" | "platformTeam" | "settings";
+type Section = "overview" | "organizations" | "organizationUsers" | "platformTeam" | "support" | "settings";
 type Modal = "tenant" | "staff" | null;
 
 type Tenant = {
@@ -97,6 +99,7 @@ const sectionTitle: Record<Section, { eyebrow: string; title: string; descriptio
   organizations: { eyebrow: "Tenanty", title: "Organizacje", description: "Portale klientów, ich wykorzystanie oraz bezpieczny dostęp techniczny." },
   organizationUsers: { eyebrow: "Dostępy klientów", title: "Użytkownicy organizacji", description: "Hierarchia kont, role i zakres uprawnień w każdej organizacji." },
   platformTeam: { eyebrow: "Zespół wewnętrzny", title: "Zespół platformy", description: "Helpdesk, moderatorzy, developerzy i administratorzy Epito." },
+  support: { eyebrow: "Obsługa klienta", title: "Wsparcie", description: "Zgłoszenia od organizacji klientów — dostępne dla całego zespołu platformy." },
   settings: { eyebrow: "Bezpieczeństwo", title: "Ustawienia supervisora", description: "Dane konta głównego, zakres dostępu i zmiana hasła." },
 };
 
@@ -139,6 +142,7 @@ const navigation: Array<{ id: Section; label: string; icon: LucideIcon }> = [
   { id: "organizations", label: "Organizacje", icon: Building2 },
   { id: "organizationUsers", label: "Użytkownicy firm", icon: Users },
   { id: "platformTeam", label: "Zespół platformy", icon: UserCog },
+  { id: "support", label: "Wsparcie", icon: MessageCircle },
   { id: "settings", label: "Ustawienia", icon: Settings },
 ];
 
@@ -398,6 +402,7 @@ export default function SupervisorPage() {
                 {section === "organizations" ? <TenantsPanel tenants={tenants} onOpen={openTenant} onCreate={() => setModal("tenant")} canCreate={canCreateOrganizations} pendingAccess={pendingAccess} /> : null}
                 {section === "organizationUsers" ? <OrganizationUsers groups={organizationGroups} search={search} onSearch={setSearch} expandedTenant={expandedTenant} onToggle={(tenantId) => setExpandedTenant((current) => current === tenantId ? "" : tenantId)} canManage={canManageTeam} pendingAccess={pendingAccess} onUpdate={updateMembership} /> : null}
                 {section === "platformTeam" ? <PlatformTeam users={platformTeam} currentUserId={session?.email || ""} canManage={canManageTeam} pendingAccess={pendingAccess} onCreate={() => setModal("staff")} onUpdate={updatePlatformAccess} /> : null}
+                {section === "support" ? <SupportSection /> : null}
                 {section === "settings" ? <SettingsSection session={session} /> : null}
               </motion.div>
             </div>
@@ -471,6 +476,182 @@ function PlatformTeam({ users, currentUserId, canManage, pendingAccess, onCreate
       return <tr key={user.id}><td><div className={admin.identityCell}><span className={admin.userAvatar}>{initials(user.full_name)}</span><span><strong>{user.full_name}{isCurrent ? " (Ty)" : ""}</strong><small>{user.email}</small></span></div></td><td>{canManage && !isCurrent ? <select className={admin.tableSelect} value={user.platform_role === "support" ? "helpdesk" : user.platform_role} disabled={pendingAccess === key} onChange={(event) => onUpdate(user, event.target.value as PlatformRole, user.status)}>{platformRoles.map((role) => <option value={role} key={role}>{platformRoleLabels[role]}</option>)}</select> : <strong>{platformRoleLabels[user.platform_role]}</strong>}<small>{user.platform_role === "support" ? platformRoleDescriptions.helpdesk : platformRoleDescriptions[user.platform_role as keyof typeof platformRoleDescriptions]}</small></td><td><strong>{dateLabel(user.last_login_at)}</strong><small>Konto od {new Date(user.created_at).toLocaleDateString("pl-PL")}</small></td><td><span className={user.mfa_enabled ? admin.okBadge : admin.neutralBadge}>{user.mfa_enabled ? "Włączone" : "Niewłączone"}</span></td><td>{canManage && !isCurrent ? <select className={admin.tableSelect} value={user.status} disabled={pendingAccess === key} onChange={(event) => onUpdate(user, user.platform_role === "support" ? "helpdesk" : user.platform_role, event.target.value)}><option value="active">Aktywny</option><option value="blocked">Zablokowany</option></select> : <span className={styles.status}>{user.status === "active" ? "Aktywny" : "Zablokowany"}</span>}</td></tr>;
     })}</tbody></table></div> : <Empty icon={UserCog} title="Brak zespołu" text="Dodaj pierwsze konto operacyjne platformy." />}</section>
   </div>;
+}
+
+type SupportTicket = {
+  id: string;
+  tenant_id: string;
+  tenant_name: string;
+  subject: string;
+  status: "open" | "closed";
+  last_message_at: string;
+  last_message_by: "client" | "staff";
+  created_at: string;
+  unread: boolean;
+  last_message_preview: string | null;
+};
+
+type SupportMessage = { id: string; sender_type: "client" | "staff"; sender_name: string; body: string; created_at: string };
+type SupportThread = { ticket: { id: string; tenant_id: string; tenant_name: string; subject: string; status: string }; messages: SupportMessage[] };
+
+const SUPPORT_POLL_MS = 5_000;
+
+function supportTimeLabel(value: string) {
+  return new Date(value).toLocaleString("pl-PL", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+}
+
+// Any platform staff (helpdesk and up) — reads and replies to every
+// tenant's support tickets without impersonating that tenant first. Polls
+// every few seconds rather than a live connection, same tradeoff as the
+// client-side SupportWorkspace in app/panel/workspace-sections.tsx.
+function SupportSection() {
+  const [tickets, setTickets] = useState<SupportTicket[]>([]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [thread, setThread] = useState<SupportThread | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [composeText, setComposeText] = useState("");
+  const [sending, setSending] = useState(false);
+  const [statusPending, setStatusPending] = useState(false);
+  const [error, setError] = useState("");
+
+  const loadTickets = useCallback(async () => {
+    const response = await fetch("/api/supervisor/support/tickets", { cache: "no-store" });
+    if (!response.ok) return;
+    const payload = (await response.json()) as { tickets: SupportTicket[] };
+    setTickets(payload.tickets);
+    setSelectedId((current) => current ?? payload.tickets[0]?.id ?? null);
+  }, []);
+
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(() => {
+      void loadTickets().finally(() => setLoading(false));
+    });
+    const timer = window.setInterval(() => void loadTickets(), SUPPORT_POLL_MS);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.clearInterval(timer);
+    };
+  }, [loadTickets]);
+
+  useEffect(() => {
+    if (!selectedId) {
+      const frame = window.requestAnimationFrame(() => setThread(null));
+      return () => window.cancelAnimationFrame(frame);
+    }
+    let cancelled = false;
+    async function loadThread() {
+      const response = await fetch(`/api/supervisor/support/tickets/${selectedId}/messages`, { cache: "no-store" });
+      if (!response.ok || cancelled) return;
+      const payload = (await response.json()) as SupportThread;
+      if (!cancelled) setThread(payload);
+    }
+    const frame = window.requestAnimationFrame(() => void loadThread());
+    const timer = window.setInterval(() => void loadThread(), SUPPORT_POLL_MS);
+    return () => {
+      cancelled = true;
+      window.cancelAnimationFrame(frame);
+      window.clearInterval(timer);
+    };
+  }, [selectedId]);
+
+  async function sendReply() {
+    if (!selectedId || !composeText.trim()) return;
+    setSending(true);
+    setError("");
+    try {
+      const response = await fetch(`/api/supervisor/support/tickets/${selectedId}/messages`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: composeText.trim() }),
+      });
+      const payload = (await response.json()) as { error?: string };
+      if (!response.ok) throw new Error(payload.error || "Nie udało się wysłać odpowiedzi.");
+      setComposeText("");
+      const [, threadResponse] = await Promise.all([
+        loadTickets(),
+        fetch(`/api/supervisor/support/tickets/${selectedId}/messages`, { cache: "no-store" }),
+      ]);
+      if (threadResponse.ok) setThread((await threadResponse.json()) as SupportThread);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Nie udało się wysłać odpowiedzi.");
+    } finally {
+      setSending(false);
+    }
+  }
+
+  async function toggleStatus() {
+    if (!selectedId || !thread) return;
+    const nextStatus = thread.ticket.status === "closed" ? "open" : "closed";
+    setStatusPending(true);
+    try {
+      const response = await fetch(`/api/supervisor/support/tickets/${selectedId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: nextStatus }),
+      });
+      if (response.ok) {
+        setThread((current) => current ? { ...current, ticket: { ...current.ticket, status: nextStatus } } : current);
+        await loadTickets();
+      }
+    } finally {
+      setStatusPending(false);
+    }
+  }
+
+  const selectedTicket = tickets.find((ticket) => ticket.id === selectedId) || null;
+
+  return (
+    <section>
+      {loading ? (
+        <div className={styles.loading}>Ładowanie zgłoszeń…</div>
+      ) : tickets.length === 0 ? (
+        <Empty icon={MessageCircle} title="Brak zgłoszeń" text="Żadna organizacja klienta nie napisała jeszcze do biura." />
+      ) : (
+        <div className="messages-layout">
+          <aside>
+            {tickets.map((ticket) => (
+              <button key={ticket.id} className={ticket.id === selectedId ? "active" : ""} onClick={() => setSelectedId(ticket.id)}>
+                <span className="advisor-avatar small">{initials(ticket.tenant_name)}</span>
+                <div><strong>{ticket.tenant_name}</strong><small>{ticket.subject}</small></div>
+                {ticket.unread ? <b>•</b> : null}
+              </button>
+            ))}
+          </aside>
+          {selectedTicket && thread ? (
+            <article className="chat-card">
+              <header>
+                <span className="advisor-avatar small">{initials(thread.ticket.tenant_name)}</span>
+                <div><strong>{thread.ticket.tenant_name}</strong><small>{thread.ticket.subject}</small></div>
+                <button type="button" className={styles.buttonGhost} onClick={() => void toggleStatus()} disabled={statusPending}>
+                  {thread.ticket.status === "closed" ? "Otwórz ponownie" : "Zamknij zgłoszenie"}
+                </button>
+              </header>
+              <div className="chat-body">
+                {thread.messages.map((message) => (
+                  <div key={message.id} className={`chat-message ${message.sender_type === "staff" ? "outgoing" : "incoming"}`}>
+                    <p>{message.body}</p>
+                    <small>{message.sender_name} · {supportTimeLabel(message.created_at)}</small>
+                  </div>
+                ))}
+              </div>
+              <footer>
+                <input
+                  aria-label="Treść odpowiedzi"
+                  placeholder="Napisz odpowiedź"
+                  value={composeText}
+                  onChange={(event) => setComposeText(event.target.value)}
+                  onKeyDown={(event) => { if (event.key === "Enter") void sendReply(); }}
+                  disabled={sending}
+                />
+                <button onClick={() => void sendReply()} disabled={sending || !composeText.trim()}>{sending ? "Wysyłanie" : "Wyślij"} <Send size={16} /></button>
+              </footer>
+            </article>
+          ) : null}
+        </div>
+      )}
+      {error ? <div className={admin.systemMessage} role="status"><span>{error}</span></div> : null}
+    </section>
+  );
 }
 
 function SettingsSection({ session }: { session: Session | null }) {

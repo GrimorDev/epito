@@ -1,6 +1,6 @@
 "use client";
 
-import { ChangeEvent, Dispatch, FormEvent, SetStateAction, useEffect, useMemo, useState } from "react";
+import { ChangeEvent, Dispatch, FormEvent, SetStateAction, useCallback, useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   Bell,
@@ -17,6 +17,7 @@ import {
   KeyRound,
   Mail,
   Maximize2,
+  MessageSquareText,
   MoreHorizontal,
   Palette,
   Pencil,
@@ -24,6 +25,7 @@ import {
   RefreshCw,
   Save,
   Search,
+  Send,
   ShieldCheck,
   Trash2,
   Upload,
@@ -928,6 +930,213 @@ export function SettingsWorkspace({ production = false, organization, onChanged 
           {activeTab === "security" ? <><article className="settings-card security-card"><div className="settings-card-head"><ShieldCheck size={21} /><div><h3>Bezpieczeństwo i nadzór</h3><p>Dostęp supervisorski jest audytowany, a dane organizacji są odseparowane w PostgreSQL.</p></div></div><div className="security-details"><span><Check size={17} /> Rejestr logowań i zmian uprawnień</span><span><Check size={17} /> Izolacja danych między organizacjami</span><span><Check size={17} /> Sesje unieważniane po wylogowaniu</span></div></article><form className="settings-card password-card" onSubmit={changePassword}><div className="settings-card-head"><KeyRound size={21} /><div><h3>Zmień hasło</h3><p>Nowe hasło musi mieć co najmniej 12 znaków, literę i cyfrę.</p></div></div><div className="settings-form-grid"><label>Obecne hasło<input type="password" autoComplete="current-password" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} required /></label><label>Nowe hasło<input type="password" autoComplete="new-password" minLength={12} value={newPassword} onChange={(event) => setNewPassword(event.target.value)} required /></label></div><button className="button button-dark" type="submit" disabled={passwordPending}>{passwordPending ? "Zapisywanie" : "Zmień hasło"}</button></form></> : null}
         </div>
       </div>
+    </section>
+  );
+}
+
+type SupportTicket = {
+  id: string;
+  subject: string;
+  status: "open" | "closed";
+  last_message_at: string;
+  last_message_by: "client" | "staff";
+  created_at: string;
+  unread: boolean;
+  last_message_preview: string | null;
+};
+
+type SupportMessage = {
+  id: string;
+  sender_type: "client" | "staff";
+  sender_name: string;
+  body: string;
+  created_at: string;
+};
+
+type SupportThread = { ticket: { id: string; subject: string; status: string }; messages: SupportMessage[] };
+
+function ticketTimeLabel(value: string) {
+  return new Date(value).toLocaleString("pl-PL", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+}
+
+// Polls every few seconds rather than pushing over a live connection —
+// mirrors the existing 4s document-processing poll in ClientPortal, no new
+// realtime infrastructure needed for a business-messaging use case where a
+// few seconds of latency is a non-issue.
+const SUPPORT_POLL_MS = 5_000;
+
+export function SupportWorkspace() {
+  const [tickets, setTickets] = useState<SupportTicket[]>([]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [thread, setThread] = useState<SupportThread | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [composeText, setComposeText] = useState("");
+  const [sending, setSending] = useState(false);
+  const [newTicketOpen, setNewTicketOpen] = useState(false);
+  const [newSubject, setNewSubject] = useState("");
+  const [newMessage, setNewMessage] = useState("");
+  const [creating, setCreating] = useState(false);
+  const [error, setError] = useState("");
+
+  const loadTickets = useCallback(async () => {
+    const response = await fetch("/api/workspace/support/tickets", { cache: "no-store" });
+    if (!response.ok) return;
+    const payload = (await response.json()) as { tickets: SupportTicket[] };
+    setTickets(payload.tickets);
+    setSelectedId((current) => current ?? payload.tickets[0]?.id ?? null);
+  }, []);
+
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(() => {
+      void loadTickets().finally(() => setLoading(false));
+    });
+    const timer = window.setInterval(() => void loadTickets(), SUPPORT_POLL_MS);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.clearInterval(timer);
+    };
+  }, [loadTickets]);
+
+  useEffect(() => {
+    if (!selectedId) {
+      const frame = window.requestAnimationFrame(() => setThread(null));
+      return () => window.cancelAnimationFrame(frame);
+    }
+    let cancelled = false;
+    async function loadThread() {
+      const response = await fetch(`/api/workspace/support/tickets/${selectedId}/messages`, { cache: "no-store" });
+      if (!response.ok || cancelled) return;
+      const payload = (await response.json()) as SupportThread;
+      if (!cancelled) setThread(payload);
+    }
+    const frame = window.requestAnimationFrame(() => void loadThread());
+    const timer = window.setInterval(() => void loadThread(), SUPPORT_POLL_MS);
+    return () => {
+      cancelled = true;
+      window.cancelAnimationFrame(frame);
+      window.clearInterval(timer);
+    };
+  }, [selectedId]);
+
+  async function sendReply() {
+    if (!selectedId || !composeText.trim()) return;
+    setSending(true);
+    try {
+      const response = await fetch(`/api/workspace/support/tickets/${selectedId}/messages`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: composeText.trim() }),
+      });
+      const payload = (await response.json()) as { error?: string };
+      if (!response.ok) throw new Error(payload.error || "Nie udało się wysłać wiadomości.");
+      setComposeText("");
+      await Promise.all([loadTickets(), (async () => {
+        const threadResponse = await fetch(`/api/workspace/support/tickets/${selectedId}/messages`, { cache: "no-store" });
+        if (threadResponse.ok) setThread((await threadResponse.json()) as SupportThread);
+      })()]);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Nie udało się wysłać wiadomości.");
+    } finally {
+      setSending(false);
+    }
+  }
+
+  async function createTicket() {
+    if (!newSubject.trim() || !newMessage.trim()) return;
+    setCreating(true);
+    setError("");
+    try {
+      const response = await fetch("/api/workspace/support/tickets", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ subject: newSubject.trim(), message: newMessage.trim() }),
+      });
+      const payload = (await response.json()) as { error?: string; ticketId?: string };
+      if (!response.ok) throw new Error(payload.error || "Nie udało się utworzyć zgłoszenia.");
+      setNewSubject("");
+      setNewMessage("");
+      setNewTicketOpen(false);
+      await loadTickets();
+      if (payload.ticketId) setSelectedId(payload.ticketId);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Nie udało się utworzyć zgłoszenia.");
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  const selectedTicket = tickets.find((ticket) => ticket.id === selectedId) || null;
+
+  return (
+    <section className="subpage messages-page">
+      <div className="page-heading">
+        <div><p>Kontakt z biurem</p><h1>Wiadomości</h1><span>Wszystkie ustalenia w jednym miejscu.</span></div>
+        <button className="upload-button" onClick={() => setNewTicketOpen(true)}><Plus size={18} /> Nowe zgłoszenie</button>
+      </div>
+
+      {loading ? (
+        <div className="panel-card portal-empty-state"><MessageSquareText size={34} /><h3>Wczytywanie</h3><p>Ładowanie wiadomości…</p></div>
+      ) : tickets.length === 0 ? (
+        <div className="panel-card portal-empty-state"><MessageSquareText size={34} /><h3>Brak wiadomości</h3><p>Nie masz jeszcze żadnych zgłoszeń do biura — kliknij &quot;Nowe zgłoszenie&quot;, żeby napisać.</p></div>
+      ) : (
+        <div className="messages-layout">
+          <aside>
+            {tickets.map((ticket) => (
+              <button key={ticket.id} className={ticket.id === selectedId ? "active" : ""} onClick={() => setSelectedId(ticket.id)}>
+                <span className="advisor-avatar small">{ticket.status === "closed" ? "OK" : "?"}</span>
+                <div><strong>{ticket.subject}</strong><small>{ticket.last_message_preview || "Brak wiadomości"}</small></div>
+                {ticket.unread ? <b>•</b> : null}
+              </button>
+            ))}
+          </aside>
+          {selectedTicket && thread ? (
+            <article className="chat-card">
+              <header>
+                <span className="advisor-avatar small">{thread.ticket.status === "closed" ? "OK" : "?"}</span>
+                <div><strong>{thread.ticket.subject}</strong><small>{thread.ticket.status === "closed" ? "Zamknięte" : "Otwarte"}</small></div>
+              </header>
+              <div className="chat-body">
+                {thread.messages.map((message) => (
+                  <div key={message.id} className={`chat-message ${message.sender_type === "client" ? "outgoing" : "incoming"}`}>
+                    <p>{message.body}</p>
+                    <small>{message.sender_name} · {ticketTimeLabel(message.created_at)}</small>
+                  </div>
+                ))}
+              </div>
+              <footer>
+                <input
+                  aria-label="Treść wiadomości"
+                  placeholder="Napisz wiadomość"
+                  value={composeText}
+                  onChange={(event) => setComposeText(event.target.value)}
+                  onKeyDown={(event) => { if (event.key === "Enter") void sendReply(); }}
+                  disabled={sending}
+                />
+                <button onClick={() => void sendReply()} disabled={sending || !composeText.trim()}>{sending ? "Wysyłanie" : "Wyślij"} <Send size={16} /></button>
+              </footer>
+            </article>
+          ) : null}
+        </div>
+      )}
+
+      {error ? <div className="team-notice">{error}</div> : null}
+
+      <AnimatePresence>
+        {newTicketOpen && (
+          <motion.div className="modal-backdrop" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+            <motion.div className="invite-modal" initial={{ opacity: 0, scale: 0.96, y: 14 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.97 }}>
+              <button className="modal-close" onClick={() => setNewTicketOpen(false)}><X size={22} /></button>
+              <span className="modal-kicker">NOWE ZGŁOSZENIE</span>
+              <h2>Napisz do biura</h2>
+              <p>Podaj temat i treść zgłoszenia — biuro odpowie w tym samym wątku.</p>
+              <label>Temat<input value={newSubject} onChange={(event) => setNewSubject(event.target.value)} placeholder="Np. Brakujący dokument" maxLength={200} /></label>
+              <label>Wiadomość<textarea value={newMessage} onChange={(event) => setNewMessage(event.target.value)} rows={4} maxLength={4000} /></label>
+              {error ? <div className="demo-notice">{error}</div> : null}
+              <button className="button button-primary button-wide" onClick={() => void createTicket()} disabled={creating || !newSubject.trim() || !newMessage.trim()}>{creating ? "Wysyłanie" : "Wyślij zgłoszenie"}</button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </section>
   );
 }

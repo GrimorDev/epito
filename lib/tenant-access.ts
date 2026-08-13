@@ -39,6 +39,15 @@ export function canMutateDocuments(role: string | null | undefined, platformRole
   return has(role, DOCUMENT_ROLES) || canEditTenantData(platformRole);
 }
 
+// Support messaging (client <-> office tickets) — owner/admin/accountant/
+// employee; viewer has zero actions anywhere, including here. Shares
+// DOCUMENT_ROLES's role list today but is its own named entitlement since
+// the two are conceptually distinct (a future change to one shouldn't
+// silently change the other).
+export function canUseMessaging(role: string | null | undefined, platformRole?: string | null) {
+  return has(role, DOCUMENT_ROLES) || canEditTenantData(platformRole);
+}
+
 // /office back-office: owner/admin/accountant, plus any platform staff
 // (helpdesk/moderator get in read-only — individual mutations still gate on
 // canMutateFinancials/canManageTeam, which require canEditTenantData).

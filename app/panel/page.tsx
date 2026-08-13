@@ -4,9 +4,9 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ChangeEvent, CSSProperties, useCallback, useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { DocumentImportModal, DocumentsWorkspace, IssueInvoiceModal, SettingsWorkspace, TeamWorkspace, type WorkspaceDocument } from "./workspace-sections";
+import { DocumentImportModal, DocumentsWorkspace, IssueInvoiceModal, SettingsWorkspace, SupportWorkspace, TeamWorkspace, type WorkspaceDocument } from "./workspace-sections";
 import { isPlatformStaff, platformRoleLabels, type PlatformRole } from "@/lib/platform-access";
-import { canAccessOffice as canAccessOfficeRole, canManageTeam as canManageTeamRole, canViewFinancials } from "@/lib/tenant-access";
+import { canAccessOffice as canAccessOfficeRole, canManageTeam as canManageTeamRole, canUseMessaging, canViewFinancials } from "@/lib/tenant-access";
 import {
   ArrowLeft,
   ArrowRight,
@@ -288,6 +288,7 @@ export function ClientPortal({ mode }: { mode: PortalMode }) {
   const canAccessOffice = !production || canAccessOfficeRole(session?.membershipRole, session?.platformRole);
   const canManageTeamAndSettings = !production || canManageTeamRole(session?.membershipRole, session?.platformRole);
   const canViewPayments = !production || canViewFinancials(session?.membershipRole, session?.platformRole);
+  const canMessage = !production || canUseMessaging(session?.membershipRole, session?.platformRole);
   const actionDocumentsList = documents.filter((document) => document.statusCode ? document.statusCode !== "verified" : document.status !== "Przetworzone");
   const newDuePayments = duePayments.filter((payment) => !seenNotificationIds.payments.includes(String(payment.id)));
   const newActionDocuments = actionDocumentsList.filter((document) => !seenNotificationIds.documents.includes(String(document.id)));
@@ -308,7 +309,7 @@ export function ClientPortal({ mode }: { mode: PortalMode }) {
     { label: "Pulpit", icon: LayoutDashboard },
     ...(canViewPayments ? [{ label: "Płatności" as Section, icon: CreditCard, badge: String(duePayments.length) }] : []),
     { label: "Dokumenty", icon: FileText, badge: String(documents.filter((document) => document.statusCode ? document.statusCode !== "verified" : document.status !== "Przetworzone").length) },
-    { label: "Wiadomości", icon: MessageSquareText, badge: production ? undefined : "1" },
+    ...(canMessage ? [{ label: "Wiadomości" as Section, icon: MessageSquareText, badge: production ? undefined : "1" }] : []),
     ...(canManageTeamAndSettings ? [{ label: "Zespół" as Section, icon: Users }, { label: "Ustawienia" as Section, icon: Settings }] : []),
   ];
 
@@ -702,7 +703,7 @@ export function ClientPortal({ mode }: { mode: PortalMode }) {
               {section === "Dokumenty" && <DocumentsWorkspace documents={documents} setDocuments={setDocuments} onUpload={uploadDocument} onOpenImport={() => setShowImportModal(true)} onOpenIssueInvoice={() => setShowIssueInvoiceModal(true)} production={production} onChanged={loadProductionData} onNotice={setPortalNotice} />}
 
               {section === "Wiadomości" && production ? (
-                <section className="subpage messages-page"><div className="page-heading"><div><p>Kontakt z biurem</p><h1>Wiadomości</h1><span>Wszystkie ustalenia będą dostępne w jednym miejscu.</span></div></div><div className="panel-card portal-empty-state"><MessageSquareText size={34} /><h3>Brak wiadomości</h3><p>Moduł nie pokazuje treści demonstracyjnych na kontach produkcyjnych.</p></div></section>
+                canMessage ? <SupportWorkspace /> : null
               ) : section === "Wiadomości" ? (
                 <section className="subpage messages-page">
                   <div className="page-heading"><div><p>Kontakt z biurem</p><h1>Wiadomości</h1><span>Wszystkie ustalenia w jednym miejscu.</span></div></div>
