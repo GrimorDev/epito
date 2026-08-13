@@ -30,7 +30,7 @@ export async function POST(request: NextRequest) {
   }
   await withUserTransaction(session.userId, (client) => client.query(
     `insert into platform_audit_log (actor_user_id, action, entity_type, entity_id, metadata)
-     values ($1, 'tenant.support_accessed', 'tenant', $2, jsonb_build_object('tenant_name', $3, 'platform_role', $4))`,
+     values ($1, 'tenant.support_accessed', 'tenant', $2, jsonb_build_object('tenant_name', $3::text, 'platform_role', $4::text))`,
     [session.userId, tenant.id, tenant.display_name, session.platformRole],
   ));
   await updateSessionTenant(request, {

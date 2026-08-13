@@ -97,7 +97,7 @@ export async function POST(request: NextRequest) {
       await client.query("insert into user_credentials (user_id, password_hash) values ($1, $2)", [userId, passwordHash]);
       await client.query(
         `insert into platform_audit_log (actor_user_id, action, entity_type, entity_id, metadata)
-         values ($1, 'platform_user.created', 'user', $2, jsonb_build_object('email', $3, 'role', $4))`,
+         values ($1, 'platform_user.created', 'user', $2, jsonb_build_object('email', $3::text, 'role', $4::text))`,
         [session.userId, userId, email, platformRole],
       );
       return { id: userId };
@@ -155,7 +155,7 @@ export async function PATCH(request: NextRequest) {
         );
         await client.query(
           `insert into platform_audit_log (actor_user_id, action, entity_type, entity_id, metadata)
-           values ($1, 'platform_user.updated', 'user', $2, jsonb_build_object('role', $3, 'status', $4))`,
+           values ($1, 'platform_user.updated', 'user', $2, jsonb_build_object('role', $3::text, 'status', $4::text))`,
           [session.userId, userId, platformRole, status],
         );
       });
@@ -189,7 +189,7 @@ export async function PATCH(request: NextRequest) {
         );
         await client.query(
           `insert into audit_log (tenant_id, actor_user_id, action, entity_type, entity_id, after_data)
-           values ($1, $2, 'membership.updated', 'user', $3, jsonb_build_object('role', $4, 'status', $5))`,
+           values ($1, $2, 'membership.updated', 'user', $3, jsonb_build_object('role', $4::text, 'status', $5::text))`,
           [tenantId, session.userId, userId, role, status],
         );
       });
