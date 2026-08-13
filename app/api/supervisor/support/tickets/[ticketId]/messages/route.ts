@@ -65,13 +65,14 @@ export async function POST(request: NextRequest, context: Context) {
     return NextResponse.json({ error: "Wiadomość musi mieć od 1 do 4000 znaków." }, { status: 400 });
   }
 
-  const updated = await withUserTransaction(session.userId, async (client) => {
-    const ticketResult = await client.query<{ id: string; tenant_id: string }>(
-      "select id, tenant_id from support_tickets where id = $1",
+  const result = await withUserTransaction(session.userId, async (client) => {
+    const ticketResult = await client.query<{ id: string; tenant_id: string; status: string }>(
+      "select id, tenant_id, status from support_tickets where id = $1",
       [ticketId],
     );
     const ticket = ticketResult.rows[0];
-    if (!ticket) return false;
+    if (!ticket) return "not_found" as const;
+    if (ticket.status === "closed") return "closed" as const;
 
     await client.query(
       "insert into support_messages (ticket_id, tenant_id, sender_user_id, sender_type, sender_name, body) values ($1, $2, $3, 'staff', $4, $5)",
@@ -81,9 +82,10 @@ export async function POST(request: NextRequest, context: Context) {
       "update support_tickets set last_message_at = now(), last_message_by = 'staff', staff_last_read_at = now(), updated_at = now() where id = $1",
       [ticketId],
     );
-    return true;
+    return "ok" as const;
   });
 
-  if (!updated) return NextResponse.json({ error: "Nie znaleziono zgłoszenia." }, { status: 404 });
+  if (result === "not_found") return NextResponse.json({ error: "Nie znaleziono zgłoszenia." }, { status: 404 });
+  if (result === "closed") return NextResponse.json({ error: "To zgłoszenie jest zamknięte. Otwórz je ponownie, żeby odpowiedzieć." }, { status: 409 });
   return NextResponse.json({ ok: true }, { status: 201 });
 }

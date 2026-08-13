@@ -1021,6 +1021,7 @@ export function SupportWorkspace() {
   async function sendReply() {
     if (!selectedId || !composeText.trim()) return;
     setSending(true);
+    setError("");
     try {
       const response = await fetch(`/api/workspace/support/tickets/${selectedId}/messages`, {
         method: "POST",
@@ -1036,6 +1037,27 @@ export function SupportWorkspace() {
       })()]);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Nie udało się wysłać wiadomości.");
+    } finally {
+      setSending(false);
+    }
+  }
+
+  async function reopenTicket() {
+    if (!selectedId) return;
+    setSending(true);
+    setError("");
+    try {
+      const response = await fetch(`/api/workspace/support/tickets/${selectedId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "open" }),
+      });
+      const payload = (await response.json()) as { error?: string };
+      if (!response.ok) throw new Error(payload.error || "Nie udało się otworzyć zgłoszenia ponownie.");
+      setThread((current) => current ? { ...current, ticket: { ...current.ticket, status: "open" } } : current);
+      await loadTickets();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Nie udało się otworzyć zgłoszenia ponownie.");
     } finally {
       setSending(false);
     }
@@ -1103,17 +1125,24 @@ export function SupportWorkspace() {
                   </div>
                 ))}
               </div>
-              <footer>
-                <input
-                  aria-label="Treść wiadomości"
-                  placeholder="Napisz wiadomość"
-                  value={composeText}
-                  onChange={(event) => setComposeText(event.target.value)}
-                  onKeyDown={(event) => { if (event.key === "Enter") void sendReply(); }}
-                  disabled={sending}
-                />
-                <button onClick={() => void sendReply()} disabled={sending || !composeText.trim()}>{sending ? "Wysyłanie" : "Wyślij"} <Send size={16} /></button>
-              </footer>
+              {thread.ticket.status === "closed" ? (
+                <footer className="closed-ticket-footer">
+                  <span>To zgłoszenie zostało zamknięte.</span>
+                  <button onClick={() => void reopenTicket()} disabled={sending}>{sending ? "Otwieranie" : "Otwórz ponownie"}</button>
+                </footer>
+              ) : (
+                <footer>
+                  <input
+                    aria-label="Treść wiadomości"
+                    placeholder="Napisz wiadomość"
+                    value={composeText}
+                    onChange={(event) => setComposeText(event.target.value)}
+                    onKeyDown={(event) => { if (event.key === "Enter") void sendReply(); }}
+                    disabled={sending}
+                  />
+                  <button onClick={() => void sendReply()} disabled={sending || !composeText.trim()}>{sending ? "Wysyłanie" : "Wyślij"} <Send size={16} /></button>
+                </footer>
+              )}
             </article>
           ) : null}
         </div>

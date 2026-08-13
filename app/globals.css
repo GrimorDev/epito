@@ -376,6 +376,8 @@ button { color: inherit; }
 .chat-card footer { height: 68px; border-top: 1px solid #e6ebe5; display: flex; align-items: center; padding: 0 15px; gap: 10px; }
 .chat-card footer input { flex: 1; border: 1px solid #dfe5de; border-radius: 7px; padding: 10px 12px; outline: none; font-size: 9px; }
 .chat-card footer button { height: 34px; border: 0; border-radius: 6px; background: var(--deep); color: #fff; padding: 0 14px; font-size: 8px; font-weight: 800; cursor: pointer; }
+.closed-ticket-footer { justify-content: space-between; }
+.closed-ticket-footer span { color: #7c8d89; font-size: 9px; }
 
 .modal-backdrop { position: fixed; inset: 0; z-index: 200; background: rgba(5,25,23,.68); backdrop-filter: blur(5px); display: grid; place-items: center; padding: 20px; }
 .payment-modal { width: min(440px, 100%); background: #fff; border-radius: 14px; padding: 32px; position: relative; box-shadow: 0 30px 80px rgba(0,0,0,.3); }
@@ -825,6 +827,7 @@ button { color: inherit; }
 .theme-dark .chat-message.outgoing { background: #285045; }
 .theme-dark .chat-card footer input,
 .theme-dark .blik-field input { background: #0f1817; color: #e8efec; border-color: #344440; }
+.theme-dark .closed-ticket-footer span { color: #93a5a0; }
 .theme-dark .modal-amount { background: #182522; }
 .theme-dark .payment-modal fieldset label { border-color: #344440; }
 .theme-dark .payment-modal fieldset label.selected { background: #1c2d24; border-color: #90b95b; }
@@ -1012,7 +1015,9 @@ button { color: inherit; }
 .invite-modal, .workspace-create-modal { width: min(480px, calc(100vw - 30px)); background: #fff; border-radius: 15px; padding: 34px; position: relative; }
 .invite-modal h2, .workspace-create-modal h2 { margin: 9px 0 8px; font-size: 25px; }.invite-modal > p, .workspace-create-modal > p { margin: 0 0 20px; color: #748681; font-size: 12px; line-height: 1.5; }
 .invite-modal > label, .workspace-create-modal > label { display: grid; gap: 7px; margin-top: 13px; color: #5d716c; font-size: 11px; font-weight: 700; }
-.invite-modal input, .invite-modal select, .workspace-create-modal input, .workspace-create-modal select { width: 100%; height: 43px; border: 1px solid #dce3dc; border-radius: 8px; padding: 0 12px; background: #fbfcfa; outline: none; }
+.invite-modal input, .invite-modal select, .invite-modal textarea, .workspace-create-modal input, .workspace-create-modal select, .workspace-create-modal textarea { width: 100%; border: 1px solid #dce3dc; border-radius: 8px; padding: 0 12px; background: #fbfcfa; outline: none; font-family: inherit; }
+.invite-modal input, .invite-modal select, .workspace-create-modal input, .workspace-create-modal select { height: 43px; }
+.invite-modal textarea, .workspace-create-modal textarea { padding: 10px 12px; resize: vertical; }
 .invite-modal .button, .workspace-create-modal .button { margin-top: 20px; }
 
 .settings-saved { min-height: 48px; margin-bottom: 16px; border: 1px solid #b9d7b8; border-radius: 9px; background: #eaf6e8; color: #3e7850; display: flex; align-items: center; gap: 9px; padding: 0 16px; font-size: 12px; font-weight: 700; }
@@ -1090,6 +1095,7 @@ button { color: inherit; }
 /* Dark surfaces for the expanded client workspace */
 .theme-dark .year-tabs, .theme-dark .month-tabs { background: #182321; }.theme-dark .year-tabs button.active, .theme-dark .month-tabs button.active { background: #2a3935; color: #fff; }
 .theme-dark .folder-sidebar, .theme-dark .document-preview-panel, .theme-dark .role-overview article, .theme-dark .settings-nav, .theme-dark .settings-card, .theme-dark .invite-modal { background: #121c1b; color: #e8efec; border-color: #273532; }
+.theme-dark .invite-modal input, .theme-dark .invite-modal select, .theme-dark .invite-modal textarea, .theme-dark .workspace-create-modal input, .theme-dark .workspace-create-modal select, .theme-dark .workspace-create-modal textarea { background: #0f1817; color: #e8efec; border-color: #344440; }
 .theme-dark .document-browser-toolbar, .theme-dark .document-column-head, .theme-dark .document-row-group, .theme-dark .preview-panel-head, .theme-dark .preview-metadata, .theme-dark .settings-card-head, .theme-dark .team-table-head, .theme-dark .team-table > div { border-color: #283734; }
 .theme-dark .document-column-head, .theme-dark .team-table-head { background: #101817; }.theme-dark .document-row-group.selected { background: #16231e; }.theme-dark .folder-heading button, .theme-dark .expand-document:hover, .theme-dark .row-menu:hover, .theme-dark .preview-panel-head button { background: #24312e; color: #c5d1cd; }
 .theme-dark .folder-sidebar > button { color: #aab9b5; }.theme-dark .folder-sidebar > button b, .theme-dark .storage-box div { background: #263330; }.theme-dark .document-search, .theme-dark .new-folder-form input, .theme-dark .inline-edit input, .theme-dark .team-table select, .theme-dark .settings-card input, .theme-dark .domain-input { background: #0f1817; color: #e5edea; border-color: #344440; }.theme-dark .file-tile, .theme-dark .role-overview article > svg, .theme-dark .settings-card-head > svg { background: #23312d; color: #b9d1c5; }.theme-dark .document-actions button, .theme-dark .document-actions a, .theme-dark .preview-actions button, .theme-dark .preview-actions a { background: #182422; color: #d8e3df; border-color: #344440; }.theme-dark .pdf-preview { background: #202c29; }.theme-dark .pdf-paper { background: #f5f6f2; color: #1b3330; }.theme-dark .settings-saved { background: #1c3325; color: #a9e3b9; border-color: #365740; }.theme-dark .settings-nav button { color: #a9b7b3; }.theme-dark .logo-upload { background: #0f1817; color: #a7b6b2; border-color: #485752; }
