@@ -637,13 +637,13 @@ function SupportSection({ dark }: { dark: boolean }) {
               <footer>
                 <input
                   aria-label="Treść odpowiedzi"
-                  placeholder="Napisz odpowiedź"
+                  placeholder={thread.ticket.status === "closed" ? "Otwórz zgłoszenie ponownie, żeby odpowiedzieć" : "Napisz odpowiedź"}
                   value={composeText}
                   onChange={(event) => setComposeText(event.target.value)}
                   onKeyDown={(event) => { if (event.key === "Enter") void sendReply(); }}
-                  disabled={sending}
+                  disabled={sending || thread.ticket.status === "closed"}
                 />
-                <button onClick={() => void sendReply()} disabled={sending || !composeText.trim()}>{sending ? "Wysyłanie" : "Wyślij"} <Send size={16} /></button>
+                <button onClick={() => void sendReply()} disabled={sending || !composeText.trim() || thread.ticket.status === "closed"}>{sending ? "Wysyłanie" : "Wyślij"} <Send size={16} /></button>
               </footer>
             </article>
           ) : null}
