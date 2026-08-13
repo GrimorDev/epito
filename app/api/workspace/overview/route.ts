@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/server/auth";
 import { withTenantTransaction } from "@/lib/server/database";
+import { canManageTeam, canViewFinancials } from "@/lib/tenant-access";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -177,5 +178,18 @@ export async function GET(request: NextRequest) {
   if (!data.tenant) {
     return NextResponse.json({ error: "Organizacja nie istnieje." }, { status: 404 });
   }
-  return NextResponse.json(data);
+
+  // Every membership role reached this endpoint with only a tenantId check
+  // before — Pracownik/Podgląd got the full team roster, and everyone got
+  // full payment/KSeF data (incl. bank account numbers) regardless of role.
+  const canTeam = canManageTeam(session.membershipRole, session.platformRole);
+  const canFinancials = canViewFinancials(session.membershipRole, session.platformRole);
+  return NextResponse.json({
+    ...data,
+    team: canTeam ? data.team : [],
+    payments: canFinancials ? data.payments : [],
+    ksefConnections: canFinancials ? data.ksefConnections : [],
+    bankTransactions: canFinancials ? data.bankTransactions : [],
+    stats: canFinancials ? data.stats : { ...data.stats, payments_due_count: 0, payments_due_total: "0" },
+  });
 }

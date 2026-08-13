@@ -25,6 +25,7 @@ import {
 import styles from "../secure.module.css";
 import { ClientPortal } from "../panel/page";
 import { IssueInvoiceModal, issuedInvoiceStatusLabels } from "../panel/workspace-sections";
+import { canAccessOffice as canAccessOfficeRole, canViewFinancials } from "@/lib/tenant-access";
 
 type Session = {
   fullName: string;
@@ -173,6 +174,10 @@ export function OfficeWorkspacePage() {
         fetch("/api/auth/session", { cache: "no-store" }).then(async (response) => {
           if (!response.ok) throw new Error("Brak sesji");
           const payload = (await response.json()) as { session: Session };
+          if (!canAccessOfficeRole(payload.session.membershipRole, payload.session.platformRole)) {
+            router.replace("/workspace");
+            return;
+          }
           setSession(payload.session);
         }),
         loadOverview(),
@@ -290,15 +295,16 @@ export function OfficeWorkspacePage() {
   const canManageTeam = session?.platformRole === "supervisor" || ["owner", "admin"].includes(session?.membershipRole || "");
   const canManageSettings = session?.platformRole === "supervisor" || ["owner", "admin"].includes(session?.membershipRole || "");
   const canManageIntegrations = session?.platformRole === "supervisor" || ["owner", "admin"].includes(session?.membershipRole || "");
+  const canSeeFinancials = canViewFinancials(session?.membershipRole, session?.platformRole);
 
   const navigation: Array<{ id: Tab; label: string; icon: typeof LayoutDashboard }> = [
     { id: "overview", label: "Pulpit", icon: LayoutDashboard },
     { id: "clients", label: `Klienci (${data?.companies.length ?? 0})`, icon: Building2 },
-    { id: "team", label: `Zespół (${data?.team.length ?? 0})`, icon: Users },
+    ...(canManageTeam ? [{ id: "team" as Tab, label: `Zespół (${data?.team.length ?? 0})`, icon: Users }] : []),
     { id: "documents", label: `Dokumenty (${data?.documents.length ?? 0})`, icon: FileText },
-    { id: "payments", label: `Płatności (${data?.payments.length ?? 0})`, icon: WalletCards },
-    { id: "integrations", label: `Integracje (${data?.ksefConnections.length ?? 0})`, icon: Plug },
-    { id: "settings", label: "Ustawienia", icon: Settings },
+    ...(canSeeFinancials ? [{ id: "payments" as Tab, label: `Płatności (${data?.payments.length ?? 0})`, icon: WalletCards }] : []),
+    ...(canSeeFinancials ? [{ id: "integrations" as Tab, label: `Integracje (${data?.ksefConnections.length ?? 0})`, icon: Plug }] : []),
+    ...(canManageSettings ? [{ id: "settings" as Tab, label: "Ustawienia", icon: Settings }] : []),
   ];
 
   return (
@@ -335,7 +341,7 @@ export function OfficeWorkspacePage() {
             </div>
           </header>
 
-          {loading || !data ? <div className={styles.loading}>Ładowanie danych organizacji…</div> : (
+          {loading || !data || !session ? <div className={styles.loading}>Ładowanie danych organizacji…</div> : (
             <div className={styles.content}>
               <div className={styles.headingRow}>
                 <div><h1>{tabLabel[tab]}</h1><p>{data.tenant.legal_name}{data.tenant.nip ? ` · NIP ${data.tenant.nip}` : ""}</p></div>
@@ -379,7 +385,7 @@ export function OfficeWorkspacePage() {
                 </div>
               ) : null}
 
-              {tab === "team" ? (
+              {tab === "team" && canManageTeam ? (
                 <div className={styles.twoColumns}>
                   <section className={styles.panel}>
                     <header className={styles.panelHeader}><div><h2>Użytkownicy organizacji</h2><p>Role decydują o zakresie dostępu do danych i operacji.</p></div></header>
@@ -426,7 +432,7 @@ export function OfficeWorkspacePage() {
                 </div>
               ) : null}
 
-              {tab === "payments" ? (
+              {tab === "payments" && canSeeFinancials ? (
                 <div className={styles.twoColumns}>
                   <section className={styles.panel}>
                     <header className={styles.panelHeader}><div><h2>Rozliczenia i terminy</h2><p>Rzeczywiste zobowiązania klientów zapisane w PostgreSQL.</p></div></header>
@@ -453,7 +459,7 @@ export function OfficeWorkspacePage() {
                 </div>
               ) : null}
 
-              {tab === "integrations" ? (
+              {tab === "integrations" && canSeeFinancials ? (
                 <div className={styles.twoColumns}>
                   <section className={styles.panel}>
                     <header className={styles.panelHeader}>
@@ -484,7 +490,7 @@ export function OfficeWorkspacePage() {
                 </div>
               ) : null}
 
-              {tab === "settings" ? (
+              {tab === "settings" && canManageSettings ? (
                 <div className={styles.twoColumns}>
                   <section className={`${styles.panel} ${styles.formPanel}`}>
                     <h2>Dane organizacji</h2><p>Informacje widoczne w panelu zespołu.</p>

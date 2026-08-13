@@ -1,0 +1,47 @@
+// Centralizes tenant-membership-role read/write gates so the client panel,
+// the office back-office, and the API routes agree on the same boundaries.
+// Previously each call site (or nothing at all, for the overview read
+// endpoint and the /office page) re-implemented its own ad-hoc role list.
+import { canEditTenantData, isPlatformStaff } from "./platform-access";
+
+export type MembershipRole = "owner" | "admin" | "accountant" | "employee" | "viewer";
+
+const MANAGE_ROLES: MembershipRole[] = ["owner", "admin"];
+const FINANCIAL_ROLES: MembershipRole[] = ["owner", "admin", "accountant"];
+const FINANCIAL_READ_ROLES: MembershipRole[] = ["owner", "admin", "accountant", "viewer"];
+const DOCUMENT_ROLES: MembershipRole[] = ["owner", "admin", "accountant", "employee"];
+
+function has(role: string | null | undefined, list: MembershipRole[]) {
+  return Boolean(role && list.includes(role as MembershipRole));
+}
+
+// Team roster and organization settings — owner/admin only.
+export function canManageTeam(role: string | null | undefined, platformRole?: string | null) {
+  return has(role, MANAGE_ROLES) || canEditTenantData(platformRole);
+}
+export const canManageSettings = canManageTeam;
+
+// Payments (incl. bank account numbers) and KSeF connection data — full
+// read for owner/admin/accountant/viewer; employee never sees this.
+export function canViewFinancials(role: string | null | undefined, platformRole?: string | null) {
+  return has(role, FINANCIAL_READ_ROLES) || isPlatformStaff(platformRole);
+}
+
+// Creating/editing payments, triggering KSeF sync, issuing/retrying/
+// cancelling invoices — owner/admin/accountant only, never employee/viewer.
+export function canMutateFinancials(role: string | null | undefined, platformRole?: string | null) {
+  return has(role, FINANCIAL_ROLES) || canEditTenantData(platformRole);
+}
+
+// Uploading/importing documents — owner/admin/accountant/employee; viewer
+// stays read-only everywhere.
+export function canMutateDocuments(role: string | null | undefined, platformRole?: string | null) {
+  return has(role, DOCUMENT_ROLES) || canEditTenantData(platformRole);
+}
+
+// /office back-office: owner/admin/accountant, plus any platform staff
+// (helpdesk/moderator get in read-only — individual mutations still gate on
+// canMutateFinancials/canManageTeam, which require canEditTenantData).
+export function canAccessOffice(role: string | null | undefined, platformRole?: string | null) {
+  return has(role, FINANCIAL_ROLES) || isPlatformStaff(platformRole);
+}

@@ -4,16 +4,12 @@ import path from "node:path";
 import { NextRequest, NextResponse } from "next/server";
 import { getSession, isSameOrigin } from "@/lib/server/auth";
 import { withTenantTransaction } from "@/lib/server/database";
-import { canEditTenantData } from "@/lib/platform-access";
+import { canMutateFinancials } from "@/lib/tenant-access";
 import { enqueueInvoiceIssue } from "@/lib/server/queues";
 import { buildFa3InvoiceXml, computeInvoiceTotals, type InvoiceLineInput, type InvoiceVatRate } from "@/lib/server/invoice-fa3";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
-
-function canIssue(role: string | null, platformRole: string) {
-  return canEditTenantData(platformRole) || ["owner", "admin", "accountant", "employee"].includes(role || "");
-}
 
 function uploadsRoot() {
   return path.resolve(/* turbopackIgnore: true */ process.env.EPITO_UPLOADS_DIR?.trim() || "/app/data/uploads");
@@ -46,7 +42,7 @@ function parseLines(raw: unknown): InvoiceLineInput[] | null {
 export async function POST(request: NextRequest) {
   if (!isSameOrigin(request)) return NextResponse.json({ error: "Nieprawidłowe źródło żądania." }, { status: 403 });
   const session = await getSession(request);
-  if (!session?.tenantId || !canIssue(session.membershipRole, session.platformRole)) {
+  if (!session?.tenantId || !canMutateFinancials(session.membershipRole, session.platformRole)) {
     return NextResponse.json({ error: "Brak uprawnień." }, { status: 403 });
   }
 
