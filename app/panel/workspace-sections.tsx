@@ -2,6 +2,7 @@
 
 import { ChangeEvent, Dispatch, FormEvent, SetStateAction, useCallback, useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
+import { useRouter } from "next/navigation";
 import {
   Bell,
   Check,
@@ -821,16 +822,16 @@ type SettingsWorkspaceProps = {
     slug: string;
     settings?: {
       branding?: { accentColor?: string; headerName?: string; logoKey?: string };
-      notifications?: { email?: boolean; paymentReminders?: boolean };
+      notifications?: { paymentReminders?: boolean };
     };
   };
   onChanged?: () => Promise<void> | void;
 };
 
 export function SettingsWorkspace({ production = false, organization, onChanged }: SettingsWorkspaceProps = {}) {
+  const router = useRouter();
   const [activeTab, setActiveTab] = useState<"organization" | "appearance" | "notifications" | "security">("organization");
   const [saved, setSaved] = useState(false);
-  const [emailNotifications, setEmailNotifications] = useState(organization?.settings?.notifications?.email ?? true);
   const [paymentReminders, setPaymentReminders] = useState(organization?.settings?.notifications?.paymentReminders ?? true);
   const [displayName, setDisplayName] = useState(organization?.displayName || "Kowalski Studio");
   const [legalName, setLegalName] = useState(organization?.legalName || "Kowalski Studio sp. z o.o.");
@@ -850,7 +851,7 @@ export function SettingsWorkspace({ production = false, organization, onChanged 
     if (production) {
       setPending(true);
       try {
-        const response = await fetch("/api/workspace/settings", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ displayName, legalName, nip, headerName, accentColor, emailNotifications, paymentReminders }) });
+        const response = await fetch("/api/workspace/settings", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ displayName, legalName, nip, headerName, accentColor, paymentReminders }) });
         const payload = (await response.json()) as { error?: string };
         if (!response.ok) throw new Error(payload.error || "Nie udało się zapisać ustawień.");
         await onChanged?.();
@@ -896,8 +897,12 @@ export function SettingsWorkspace({ production = false, organization, onChanged 
     setPasswordPending(true);
     try {
       const response = await fetch("/api/auth/password", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ currentPassword, newPassword }) });
-      const payload = (await response.json()) as { error?: string };
+      const payload = (await response.json()) as { error?: string; reauthenticate?: boolean };
       if (!response.ok) throw new Error(payload.error || "Nie udało się zmienić hasła.");
+      if (payload.reauthenticate) {
+        router.replace("/logowanie?haslo=zmienione");
+        return;
+      }
       setCurrentPassword("");
       setNewPassword("");
       setSaved(true);
@@ -926,8 +931,8 @@ export function SettingsWorkspace({ production = false, organization, onChanged 
         <div className="settings-content">
           {activeTab === "organization" ? <><article className="settings-card"><div className="settings-card-head"><Globe2 size={21} /><div><h3>Dane organizacji</h3><p>Informacje widoczne w panelu pracowników.</p></div></div><div className="settings-form-grid"><label>Pełna nazwa firmy<input value={legalName} onChange={(event) => setLegalName(event.target.value)} /></label><label>NIP<input value={nip} onChange={(event) => setNip(event.target.value)} /></label><label>Nazwa w panelu<input value={displayName} onChange={(event) => setDisplayName(event.target.value)} /></label><label>Tryb danych<input value={production ? "Dane produkcyjne" : "Demonstracja"} readOnly /></label></div></article><article className="settings-card"><div className="settings-card-head"><Globe2 size={21} /><div><h3>Adres portalu</h3><p>Dedykowany adres logowania dla Twojej firmy.</p></div></div><label className="domain-input"><span>https://</span><input value={organization?.slug || "client231"} readOnly onChange={() => undefined} /><b>.epito.pl</b><button type="button" onClick={() => void copyPortalAddress()} aria-label="Kopiuj adres"><Copy size={17} /></button></label><small className="field-help">Zmiana adresu wymaga kontaktu z administratorem platformy.</small></article></> : null}
           {activeTab === "appearance" ? <article className="settings-card"><div className="settings-card-head"><Palette size={21} /><div><h3>Wygląd portalu</h3><p>Dopasuj panel do marki swojej firmy. Zmiany są widoczne po zapisaniu.</p></div></div><div className="branding-row"><label className="logo-upload">{organization?.settings?.branding?.logoKey && production ? <img src={`/api/workspace/settings/logo?v=${logoVersion}`} alt="Logo organizacji" /> : <Plus size={20} />}<span>{logoUploading ? "Wgrywanie" : organization?.settings?.branding?.logoKey ? "Zmień logo" : "Dodaj logo"}</span><input type="file" accept="image/png,image/jpeg,image/webp" onChange={uploadLogo} disabled={logoUploading} /></label><label>Kolor akcentu<div className="color-control"><input type="color" value={accentColor} onChange={(event) => setAccentColor(event.target.value.toUpperCase())} /><input value={accentColor} onChange={(event) => setAccentColor(event.target.value.toUpperCase())} maxLength={7} /></div></label><label>Nazwa w nagłówku<input value={headerName} onChange={(event) => setHeaderName(event.target.value)} /></label></div></article> : null}
-          {activeTab === "notifications" ? <article className="settings-card"><div className="settings-card-head"><Bell size={21} /><div><h3>Powiadomienia</h3><p>Określ, jakie wiadomości otrzymuje zespół.</p></div></div><div className="toggle-list"><label><span><strong>Powiadomienia e-mail</strong><small>Nowe dokumenty i wiadomości od biura.</small></span><input type="checkbox" checked={emailNotifications} onChange={() => setEmailNotifications((value) => !value)} /></label><label><span><strong>Przypomnienia o płatnościach</strong><small>Wiadomość 3 dni przed terminem.</small></span><input type="checkbox" checked={paymentReminders} onChange={() => setPaymentReminders((value) => !value)} /></label></div></article> : null}
-          {activeTab === "security" ? <><article className="settings-card security-card"><div className="settings-card-head"><ShieldCheck size={21} /><div><h3>Bezpieczeństwo i nadzór</h3><p>Dostęp supervisorski jest audytowany, a dane organizacji są odseparowane w PostgreSQL.</p></div></div><div className="security-details"><span><Check size={17} /> Rejestr logowań i zmian uprawnień</span><span><Check size={17} /> Izolacja danych między organizacjami</span><span><Check size={17} /> Sesje unieważniane po wylogowaniu</span></div></article><form className="settings-card password-card" onSubmit={changePassword}><div className="settings-card-head"><KeyRound size={21} /><div><h3>Zmień hasło</h3><p>Nowe hasło musi mieć co najmniej 12 znaków, literę i cyfrę.</p></div></div><div className="settings-form-grid"><label>Obecne hasło<input type="password" autoComplete="current-password" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} required /></label><label>Nowe hasło<input type="password" autoComplete="new-password" minLength={12} value={newPassword} onChange={(event) => setNewPassword(event.target.value)} required /></label></div><button className="button button-dark" type="submit" disabled={passwordPending}>{passwordPending ? "Zapisywanie" : "Zmień hasło"}</button></form></> : null}
+          {activeTab === "notifications" ? <article className="settings-card"><div className="settings-card-head"><Bell size={21} /><div><h3>Powiadomienia</h3><p>Ustawienia wpływają bezpośrednio na wiadomości wysyłane przez system.</p></div></div><div className="toggle-list"><label><span><strong>Przypomnienia o płatnościach</strong><small>Wiadomości 7 i 2 dni przed terminem. Wyłączenie zatrzymuje nowe przypomnienia.</small></span><input type="checkbox" checked={paymentReminders} onChange={() => setPaymentReminders((value) => !value)} /></label></div></article> : null}
+          {activeTab === "security" ? <><article className="settings-card security-card"><div className="settings-card-head"><ShieldCheck size={21} /><div><h3>Bezpieczeństwo i nadzór</h3><p>Dostęp techniczny jest audytowany, a dane organizacji są odseparowane w PostgreSQL.</p></div></div><div className="security-details"><span><Check size={17} /> Rejestr logowań i zmian uprawnień</span><span><Check size={17} /> Izolacja danych organizacji i przypisanych firm</span><span><Check size={17} /> Sesje unieważniane po zmianie hasła, roli lub blokadzie konta</span></div></article><form className="settings-card password-card" onSubmit={changePassword}><div className="settings-card-head"><KeyRound size={21} /><div><h3>Zmień hasło</h3><p>Nowe hasło musi mieć co najmniej 12 znaków, literę i cyfrę. Po zmianie zalogujesz się ponownie.</p></div></div><div className="settings-form-grid"><label>Obecne hasło<input type="password" autoComplete="current-password" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} required /></label><label>Nowe hasło<input type="password" autoComplete="new-password" minLength={12} value={newPassword} onChange={(event) => setNewPassword(event.target.value)} required /></label></div><button className="button button-dark" type="submit" disabled={passwordPending}>{passwordPending ? "Zapisywanie" : "Zmień hasło"}</button></form></> : null}
         </div>
       </div>
     </section>

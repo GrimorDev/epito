@@ -2,7 +2,7 @@
 // the office back-office, and the API routes agree on the same boundaries.
 // Previously each call site (or nothing at all, for the overview read
 // endpoint and the /office page) re-implemented its own ad-hoc role list.
-import { canEditTenantData, isPlatformStaff } from "./platform-access";
+import { canEditTenantData } from "./platform-access";
 
 export type MembershipRole = "owner" | "admin" | "accountant" | "employee" | "viewer";
 
@@ -24,7 +24,7 @@ export const canManageSettings = canManageTeam;
 // Payments (incl. bank account numbers) and KSeF connection data — full
 // read for owner/admin/accountant/viewer; employee never sees this.
 export function canViewFinancials(role: string | null | undefined, platformRole?: string | null) {
-  return has(role, FINANCIAL_READ_ROLES) || isPlatformStaff(platformRole);
+  return has(role, FINANCIAL_READ_ROLES) || canEditTenantData(platformRole);
 }
 
 // Creating/editing payments, triggering KSeF sync, issuing/retrying/
@@ -48,9 +48,9 @@ export function canUseMessaging(role: string | null | undefined, platformRole?: 
   return has(role, DOCUMENT_ROLES) || canEditTenantData(platformRole);
 }
 
-// /office back-office: owner/admin/accountant, plus any platform staff
-// (helpdesk/moderator get in read-only — individual mutations still gate on
-// canMutateFinancials/canManageTeam, which require canEditTenantData).
+// /office back-office: owner/admin/accountant, plus audited technical data
+// operators. Helpdesk and moderators stay in the support surface and never
+// receive financial/document access.
 export function canAccessOffice(role: string | null | undefined, platformRole?: string | null) {
-  return has(role, FINANCIAL_ROLES) || isPlatformStaff(platformRole);
+  return has(role, FINANCIAL_ROLES) || canEditTenantData(platformRole);
 }

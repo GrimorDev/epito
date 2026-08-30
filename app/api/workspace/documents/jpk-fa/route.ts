@@ -5,14 +5,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSession, isSameOrigin } from "@/lib/server/auth";
 import { withTenantTransaction } from "@/lib/server/database";
 import { parseJpkFaSalesInvoices } from "@/lib/server/jpk-fa";
+import { validateXmlUpload } from "@/lib/server/file-validation";
 import { canEditTenantData } from "@/lib/platform-access";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 const MAX_FILE_SIZE = 15 * 1024 * 1024;
-const allowedMimeTypes = new Set(["text/xml", "application/xml"]);
-
 function uploadsRoot() {
   return path.resolve(/* turbopackIgnore: true */ process.env.EPITO_UPLOADS_DIR?.trim() || "/app/data/uploads");
 }
@@ -37,14 +36,18 @@ export async function POST(request: NextRequest) {
   const form = await request.formData().catch(() => null);
   const file = form?.get("file");
   const clientCompanyId = form?.get("clientCompanyId");
-  if (!(file instanceof File) || file.size < 1 || file.size > MAX_FILE_SIZE || !allowedMimeTypes.has(file.type)) {
+  if (!(file instanceof File) || file.size < 1 || file.size > MAX_FILE_SIZE) {
     return NextResponse.json({ error: "Dodaj plik JPK_FA w formacie XML o wielkości do 15 MB." }, { status: 400 });
   }
   if (typeof clientCompanyId !== "string" || !clientCompanyId) {
     return NextResponse.json({ error: "Wybierz firmę klienta, której dotyczy import." }, { status: 400 });
   }
 
-  const xmlText = await file.text();
+  const bytes = Buffer.from(await file.arrayBuffer());
+  const xmlText = validateXmlUpload(bytes, file.type);
+  if (!xmlText) {
+    return NextResponse.json({ error: "Zawartość pliku nie jest bezpiecznym dokumentem XML." }, { status: 400 });
+  }
   let parsedFile;
   try {
     parsedFile = parseJpkFaSalesInvoices(xmlText);

@@ -14,6 +14,13 @@ export function taxTypeLabel(taxType) {
   return TAX_TYPE_LABELS[taxType] || String(taxType || "").toUpperCase();
 }
 
+export function paymentTransferTitle({ transferTitle, taxType, periodLabel, paymentReference }) {
+  const base = transferTitle || `${taxTypeLabel(taxType)} ${periodLabel || ""}`.trim();
+  const reference = String(paymentReference || "").trim();
+  if (!reference || base.toLowerCase().includes(reference.toLowerCase())) return base;
+  return `${base} | Ref. ${reference}`;
+}
+
 function formatMoney(amount, currency) {
   return new Intl.NumberFormat("pl-PL", { style: "currency", currency: currency || "PLN" }).format(Number(amount));
 }
@@ -53,11 +60,13 @@ export function buildReminderEmailHtml({
   recipientName,
   bankAccountNumber,
   transferTitle,
+  paymentReference,
   daysUntilDue,
 }) {
   const label = taxTypeLabel(taxType);
   const formattedAccount = formatBankAccount(bankAccountNumber);
   const dayWord = daysUntilDue === 1 ? "dzień" : "dni";
+  const completeTransferTitle = paymentTransferTitle({ transferTitle, taxType, periodLabel, paymentReference });
 
   return `<!doctype html>
 <html lang="pl">
@@ -73,7 +82,7 @@ export function buildReminderEmailHtml({
       ${recipientName ? `<div style="font-size:12px; color:#7e8e8a;">Odbiorca</div><div style="font-size:15px; margin-bottom:12px;">${escapeHtml(recipientName)}</div>` : ""}
       ${formattedAccount ? `<div style="font-size:12px; color:#7e8e8a;">Rachunek odbiorcy</div><div style="font-size:15px; margin-bottom:12px; letter-spacing:.03em;">${escapeHtml(formattedAccount)}</div>` : ""}
       <div style="font-size:12px; color:#7e8e8a;">Tytuł przelewu</div>
-      <div style="font-size:15px;">${escapeHtml(transferTitle || `${label} ${periodLabel || ""}`.trim())}</div>
+      <div style="font-size:15px;">${escapeHtml(completeTransferTitle)}</div>
     </div>
     <p style="color:#8a9490; font-size:12px; line-height:1.5;">To automatyczne przypomnienie z systemu Epito, wysłane w imieniu biura ${escapeHtml(tenantName)}. Epito nie pośredniczy w przepływie środków — to zwykły przelew na rachunek odbiorcy.</p>
   </div>

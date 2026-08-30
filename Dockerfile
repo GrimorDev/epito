@@ -99,6 +99,11 @@ USER nextjs
 
 CMD ["node", "scripts/ksef-worker.mjs"]
 
+FROM postgres:16-alpine AS backup_worker
+RUN apk add --no-cache openssl
+COPY --chmod=0555 scripts/backup.sh /usr/local/bin/epito-backup
+ENTRYPOINT ["/usr/local/bin/epito-backup"]
+
 # Keep the web application as the default result of `docker build .`.
-# Compose still selects both runtime targets explicitly.
+# Compose selects the worker targets explicitly.
 FROM runner AS final

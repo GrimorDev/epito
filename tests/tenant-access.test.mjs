@@ -46,7 +46,7 @@ test("null/undefined role is denied everywhere", () => {
   assert.equal(canAccessOffice(null), false);
 });
 
-test("platform staff bypass: supervisor/admin/developer can mutate; helpdesk/moderator/support are read-only", () => {
+test("platform data operators can work in tenants; helpdesk/moderator/support stay in support only", () => {
   for (const platformRole of ["supervisor", "admin", "developer"]) {
     assert.equal(canManageTeam(null, platformRole), true, platformRole);
     assert.equal(canMutateFinancials(null, platformRole), true, platformRole);
@@ -58,8 +58,7 @@ test("platform staff bypass: supervisor/admin/developer can mutate; helpdesk/mod
     assert.equal(canMutateFinancials(null, platformRole), false, platformRole);
     assert.equal(canMutateDocuments(null, platformRole), false, platformRole);
     assert.equal(canUseMessaging(null, platformRole), false, platformRole);
-    // but any staff role, including helpdesk/moderator/support, can view and reach /office read-only
-    assert.equal(canViewFinancials(null, platformRole), true, platformRole);
-    assert.equal(canAccessOffice(null, platformRole), true, platformRole);
+    assert.equal(canViewFinancials(null, platformRole), false, platformRole);
+    assert.equal(canAccessOffice(null, platformRole), false, platformRole);
   }
 });

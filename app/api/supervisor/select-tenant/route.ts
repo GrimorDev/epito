@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession, isSameOrigin, updateSessionTenant } from "@/lib/server/auth";
 import { withUserTransaction } from "@/lib/server/database";
-import { isPlatformStaff } from "@/lib/platform-access";
+import { canEditTenantData } from "@/lib/platform-access";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -11,7 +11,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Nieprawidłowe źródło żądania." }, { status: 403 });
   }
   const session = await getSession(request);
-  if (!session || !isPlatformStaff(session.platformRole)) {
+  if (!session || !canEditTenantData(session.platformRole)) {
     return NextResponse.json({ error: "Brak dostępu." }, { status: 401 });
   }
 
@@ -38,6 +38,7 @@ export async function POST(request: NextRequest) {
     tenantSlug: tenant.slug,
     tenantName: tenant.display_name,
     membershipRole: null,
+    accessScope: "tenant",
   });
   return NextResponse.json({ ok: true, redirectTo: "/workspace" });
 }

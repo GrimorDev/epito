@@ -7,6 +7,7 @@ export type LoginIdentity = {
   fullName: string;
   platformRole: PlatformRole;
   passwordHash: string;
+  authVersion: number;
 };
 
 export type TenantMembership = {
@@ -14,6 +15,7 @@ export type TenantMembership = {
   tenantSlug: string;
   tenantName: string;
   membershipRole: "owner" | "admin" | "accountant" | "employee" | "viewer";
+  accessScope: "tenant" | "assigned_companies";
 };
 
 export async function findLoginIdentity(email: string): Promise<LoginIdentity | null> {
@@ -24,6 +26,7 @@ export async function findLoginIdentity(email: string): Promise<LoginIdentity | 
     full_name: string;
     platform_role: LoginIdentity["platformRole"];
     password_hash: string;
+    auth_version: number;
   }>("select * from epito_get_login_identity($1)", [email]);
 
   const row = result.rows[0];
@@ -34,6 +37,7 @@ export async function findLoginIdentity(email: string): Promise<LoginIdentity | 
     fullName: row.full_name,
     platformRole: row.platform_role,
     passwordHash: row.password_hash,
+    authVersion: row.auth_version,
   };
 }
 
@@ -44,6 +48,7 @@ export async function listUserMemberships(userId: string): Promise<TenantMembers
       tenant_slug: string;
       tenant_name: string;
       membership_role: TenantMembership["membershipRole"];
+      access_scope: TenantMembership["accessScope"];
     }>("select * from epito_user_memberships()");
 
     return result.rows.map((row) => ({
@@ -51,6 +56,7 @@ export async function listUserMemberships(userId: string): Promise<TenantMembers
       tenantSlug: row.tenant_slug,
       tenantName: row.tenant_name,
       membershipRole: row.membership_role,
+      accessScope: row.access_scope,
     }));
   });
 }

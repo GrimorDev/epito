@@ -42,6 +42,14 @@ x-ksef-worker-build: &ksef-worker-build
   image: ${EPITO_KSEF_WORKER_IMAGE:-epito-ksef-worker:server}
   pull_policy: ${EPITO_PULL_POLICY:-build}
 
+x-backup-worker-build: &backup-worker-build
+  build:
+    context: .
+    dockerfile: Dockerfile
+    target: backup_worker
+  image: ${EPITO_BACKUP_IMAGE:-epito-backup:server}
+  pull_policy: ${EPITO_PULL_POLICY:-build}
+
 services:
   postgres:
     image: postgres:16-alpine
@@ -246,6 +254,46 @@ services:
       - backend-internal
       - ksef-egress
 
+  backup:
+    <<: *backup-worker-build
+    container_name: ${EPITO_BACKUP_CONTAINER_NAME:-epito-backup}
+    restart: unless-stopped
+    environment:
+      DATABASE_HOST: postgres
+      DATABASE_PORT: "5432"
+      DATABASE_NAME: ${EPITO_DATABASE_NAME:-epito_prod}
+      DATABASE_ADMIN_USER: epito_admin
+      EPITO_BACKUP_RETENTION_DAYS: ${EPITO_BACKUP_RETENTION_DAYS:-14}
+      EPITO_BACKUP_INTERVAL_SECONDS: ${EPITO_BACKUP_INTERVAL_SECONDS:-86400}
+    volumes:
+      - uploads_data:/uploads:ro
+      - backup_data:/backups
+    secrets:
+      - postgres_admin_password
+      - backup_encryption_password
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - test -s /backups/.last-success
+      interval: 5m
+      timeout: 5s
+      start_period: 5m
+      retries: 3
+    read_only: true
+    tmpfs:
+      - /tmp:size=256m,noexec,nosuid,nodev
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    networks:
+      - backend-internal
+
 volumes:
   postgres_data:
     name: ${EPITO_POSTGRES_VOLUME:-epito-postgres-data}
@@ -253,6 +301,8 @@ volumes:
     name: ${EPITO_REDIS_VOLUME:-epito-redis-data}
   uploads_data:
     name: ${EPITO_UPLOADS_VOLUME:-epito-uploads-data}
+  backup_data:
+    name: ${EPITO_BACKUP_VOLUME:-epito-backups}
 
 secrets:
   postgres_admin_password:
@@ -267,6 +317,8 @@ secrets:
     environment: EPITO_KSEF_ENCRYPTION_KEY
   smtp_password:
     environment: EPITO_SMTP_PASSWORD
+  backup_encryption_password:
+    environment: EPITO_BACKUP_ENCRYPTION_PASSWORD
 
 networks:
   frontend:

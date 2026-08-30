@@ -28,11 +28,15 @@ export async function POST(request: NextRequest) {
   }
 
   const passwordHash = await hashPassword(newPassword);
-  await withUserTransaction(session.userId, (client) =>
-    client.query(
+  await withUserTransaction(session.userId, async (client) => {
+    await client.query(
       "update user_credentials set password_hash = $1, password_changed_at = now(), updated_at = now() where user_id = $2",
       [passwordHash, session.userId],
-    ).then(() => undefined),
-  );
-  return NextResponse.json({ ok: true });
+    );
+    await client.query(
+      "update users set auth_version = auth_version + 1, updated_at = now() where id = $1",
+      [session.userId],
+    );
+  });
+  return NextResponse.json({ ok: true, reauthenticate: true });
 }

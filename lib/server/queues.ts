@@ -1,4 +1,4 @@
-import { Queue, type JobsOptions } from "bullmq";
+import type { JobsOptions, Queue } from "bullmq";
 import { getRedis } from "./redis";
 
 export type BackgroundQueue = "notifications" | "documents" | "integrations";
@@ -17,7 +17,8 @@ export type BackgroundJob = {
     | "payment.reconcile"
     | "whitelist.verify"
     | "payment.remind"
-    | "lead.notify";
+    | "lead.notify"
+    | "account.invite";
   payload: Record<string, unknown>;
   createdAt: string;
 };
@@ -25,6 +26,10 @@ export type BackgroundJob = {
 const queues = new Map<BackgroundQueue, Promise<Queue<BackgroundJob>>>();
 
 async function createQueue(name: BackgroundQueue) {
+  // Keep BullMQ out of the public Sites entry chunk. BullMQ 6 ships an
+  // optional PostgreSQL backend whose filesystem SQL loader cannot execute in
+  // the Cloudflare runtime, even though Epito uses the Redis backend only.
+  const { Queue } = await import("bullmq");
   const connection = await getRedis();
   return new Queue<BackgroundJob>(name, {
     connection,

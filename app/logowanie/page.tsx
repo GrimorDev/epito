@@ -1,15 +1,21 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { FormEvent, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { FormEvent, Suspense, useState } from "react";
 import { ArrowLeft, ArrowRight, LockKeyhole } from "lucide-react";
 import styles from "../secure.module.css";
 
-export default function LoginPage() {
+function LoginContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
+  const notice = searchParams.get("aktywacja") === "gotowa"
+    ? "Konto zostało aktywowane. Możesz się zalogować."
+    : searchParams.get("haslo") === "zmienione"
+      ? "Hasło zostało zmienione. Zaloguj się ponownie."
+      : "";
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -62,6 +68,7 @@ export default function LoginPage() {
               <label htmlFor="password">Hasło</label>
               <input id="password" name="password" type="password" autoComplete="current-password" required maxLength={256} />
             </div>
+            {notice ? <div className={styles.success} role="status">{notice}</div> : null}
             {error ? <div className={styles.error} role="alert">{error}</div> : null}
             <button className={styles.buttonPrimary} type="submit" disabled={pending}>
               {pending ? "Sprawdzam dane…" : "Zaloguj się"} <ArrowRight size={18} />
@@ -71,4 +78,8 @@ export default function LoginPage() {
       </section>
     </main>
   );
+}
+
+export default function LoginPage() {
+  return <Suspense fallback={<main className={styles.loading}>Ładowanie logowania…</main>}><LoginContent /></Suspense>;
 }

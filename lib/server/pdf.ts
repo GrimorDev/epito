@@ -1,8 +1,9 @@
-import puppeteer, { type Browser } from "puppeteer";
+import type { Browser } from "puppeteer";
 
 let browserPromise: Promise<Browser> | undefined;
 
 async function getBrowser(): Promise<Browser> {
+  const { default: puppeteer } = await import("puppeteer");
   browserPromise ??= puppeteer.launch({
     headless: true,
     // Debian's own chromium package (installed via apt in the Dockerfile),

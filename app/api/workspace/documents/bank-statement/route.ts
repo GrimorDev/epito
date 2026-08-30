@@ -6,6 +6,7 @@ import { getSession, isSameOrigin } from "@/lib/server/auth";
 import { parseBankStatement, transactionFingerprint } from "@/lib/server/bank-statements";
 import { withTenantTransaction } from "@/lib/server/database";
 import { matchTransaction } from "@/lib/server/payment-matching";
+import { validateXmlUpload } from "@/lib/server/file-validation";
 import { canEditTenantData } from "@/lib/platform-access";
 
 export const dynamic = "force-dynamic";
@@ -47,6 +48,9 @@ export async function POST(request: NextRequest) {
   }
 
   const buffer = Buffer.from(await file.arrayBuffer());
+  if (buffer.includes(0) || (/\.xml$/i.test(file.name) && !validateXmlUpload(buffer, file.type))) {
+    return NextResponse.json({ error: "Zawartość pliku wyciągu jest nieprawidłowa lub niebezpieczna." }, { status: 400 });
+  }
   let statement;
   try {
     statement = parseBankStatement(buffer, file.name);
