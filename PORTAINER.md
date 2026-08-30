@@ -108,6 +108,8 @@ Operacje organizacji działają w transakcji ustawiającej `app.current_tenant_i
 
 Usługa `backup` wykonuje pierwszą kopię po uruchomieniu, a następnie domyślnie co 24 godziny. Osobno zapisuje PostgreSQL i wolumen dokumentów, szyfruje oba archiwa AES-256 z PBKDF2, generuje sumy SHA-256 i przed oznaczeniem sukcesu sprawdza, czy zrzut oraz archiwum dają się odczytać. Kopie trafiają do wolumenu `epito-backups`; domyślna retencja wynosi 14 dni.
 
+Kontener backupu nie używa `read_only: true`, ponieważ Docker Compose tworzy sekrety przekazane z ustawień Portainera dopiero po utworzeniu kontenera i musi zapisać je w `/run/secrets`. Nadal działa bez dodatkowych capabilities, z `no-new-privileges`, bez dostępu do sieci publicznej, z dokumentami źródłowymi zamontowanymi tylko do odczytu oraz z katalogiem tymczasowym w osobnym `tmpfs`.
+
 Wolumen backupu nadal znajduje się na tym samym serwerze. Skonfiguruj dodatkową, szyfrowaną replikację katalogu/volumenu `epito-backups` poza VPS i wykonuj próbne odtworzenie co najmniej raz na kwartał. Hasło `EPITO_BACKUP_ENCRYPTION_PASSWORD` przechowuj w menedżerze haseł poza serwerem. Bez niego kopii nie da się odszyfrować.
 
 ## 7. Aktualizacja
