@@ -32,16 +32,16 @@ export async function PATCH(request: NextRequest, context: Context) {
   }
 
   const updated = await withTenantTransaction(session.tenantId, session.userId, async (client) => {
-    const payment = await client.query<{ id: string }>(
-      "select id from payments where id = $1 and status = 'due'",
+    const payment = await client.query<{ id: string; client_company_id: string }>(
+      "select id, client_company_id from payments where id = $1 and status = 'due'",
       [paymentId],
     );
     if (!payment.rowCount) return false;
 
     if (matchTransactionId) {
       const transaction = await client.query<{ id: string }>(
-        "select id from bank_statement_transactions where id = $1 and match_status != 'matched'",
-        [matchTransactionId],
+        "select id from bank_statement_transactions where id = $1 and client_company_id = $2 and match_status != 'matched'",
+        [matchTransactionId, payment.rows[0].client_company_id],
       );
       if (!transaction.rowCount) return false;
       await client.query(

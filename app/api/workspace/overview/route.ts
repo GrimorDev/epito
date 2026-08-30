@@ -106,7 +106,7 @@ export async function GET(request: NextRequest) {
           company.name as company_name,
           coalesce(payment.metadata->>'recipient_name', case when payment.tax_type = 'invoice' then company.name end) as recipient_name,
           coalesce(invoice.bank_account_number, payment.metadata->>'bank_account_number') as bank_account_number,
-          coalesce(payment.payment_reference, payment.metadata->>'transfer_title', payment.metadata->>'invoice_number') as transfer_title,
+          coalesce(payment.metadata->>'transfer_title', payment.metadata->>'invoice_number') as transfer_title,
           payment.created_at,
           payment.payment_reference, payment.metadata->>'source' as payment_source
         from payments payment
@@ -146,6 +146,7 @@ export async function GET(request: NextRequest) {
         client_company_id: string;
         company_name: string;
         value_date: string;
+        direction: "credit" | "debit";
         amount: string;
         currency: string;
         description: string;
@@ -153,7 +154,7 @@ export async function GET(request: NextRequest) {
         matched_payment_id: string | null;
       }>(`
         select transaction.id, transaction.client_company_id, company.name as company_name,
-          transaction.value_date::text, transaction.amount::text, transaction.currency,
+          transaction.value_date::text, transaction.direction, transaction.amount::text, transaction.currency,
           transaction.description, transaction.match_status, transaction.matched_payment_id
         from bank_statement_transactions transaction
         join client_companies company on company.id = transaction.client_company_id

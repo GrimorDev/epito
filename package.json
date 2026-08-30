@@ -16,6 +16,7 @@
     "test:invoice": "node --test tests/invoice-extraction.test.mjs",
     "test:ksef": "node --test tests/ksef.test.mjs",
     "test:jpk-fa": "tsx --test tests/jpk-fa.test.mjs",
+    "test:payments": "tsx --test tests/payment-matching.test.mjs tests/bank-statements.test.mjs",
     "db:generate:d1": "drizzle-kit generate",
     "db:migrate:postgres": "node scripts/migrate.mjs"
   },

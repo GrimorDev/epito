@@ -652,7 +652,7 @@ async function handleInvoiceIssue(job) {
         }
       }
 
-      // payment_reference has a per-tenant unique index (0008_payment_reconciliation.sql).
+      // payment_reference has a per-tenant unique index (0009_payment_reconciliation.sql).
       // A collision is astronomically unlikely at 8 chars, but on one the
       // whole transaction below rolls back (withTenant), so the retry regenerates
       // the reference and redoes the full transaction rather than just the insert.

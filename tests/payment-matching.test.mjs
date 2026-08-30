@@ -31,3 +31,9 @@ test("matchTransaction avoids float rounding false negatives on the amount compa
   const result = matchTransaction({ amount: 0.1 + 0.2, description: "EP-4F7K9QRT" }, [{ id: "pay-3", amount: 0.3, paymentReference: "EP-4F7K9QRT" }]);
   assert.deepEqual(result, { status: "matched", paymentId: "pay-3" });
 });
+
+test("matchTransaction refuses automatic approval when currency or direction differs", () => {
+  const transaction = { amount: 1500, description: "EP-4F7K9QRT", currency: "EUR", direction: "debit" };
+  const candidate = [{ ...candidates[0], currency: "PLN", direction: "credit" }];
+  assert.deepEqual(matchTransaction(transaction, candidate), { status: "ambiguous", paymentId: "pay-1" });
+});
