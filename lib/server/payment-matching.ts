@@ -1,12 +1,16 @@
 export type MatchableTransaction = {
   amount: number;
   description: string;
+  currency?: string;
+  direction?: "credit" | "debit";
 };
 
 export type MatchCandidatePayment = {
   id: string;
   amount: number;
   paymentReference: string;
+  currency?: string;
+  direction?: "credit" | "debit";
 };
 
 export type MatchResult = { status: "matched"; paymentId: string } | { status: "unmatched" } | { status: "ambiguous"; paymentId: string };
@@ -34,6 +38,8 @@ export function matchTransaction(transaction: MatchableTransaction, candidates: 
     return normalizedReference.length > 0 && normalizedDescription.includes(normalizedReference);
   });
   if (!found) return { status: "unmatched" };
-  if (amountsEqual(transaction.amount, found.amount)) return { status: "matched", paymentId: found.id };
+  const currencyMatches = !transaction.currency || !found.currency || transaction.currency.toUpperCase() === found.currency.toUpperCase();
+  const directionMatches = !transaction.direction || !found.direction || transaction.direction === found.direction;
+  if (amountsEqual(transaction.amount, found.amount) && currencyMatches && directionMatches) return { status: "matched", paymentId: found.id };
   return { status: "ambiguous", paymentId: found.id };
 }

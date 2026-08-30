@@ -85,7 +85,7 @@ type PortalOverview = {
   documents: Array<{ id: string; name: string; category: string; status: string; document_year: number; document_month: number; amount: string | null; currency: string; issued_at: string | null; mime_type: string; file_size: number; structured_data: { analysis?: WorkspaceDocument["analysis"]; manual_override?: Record<string, unknown>; vat_whitelist?: { status: string; message: string | null } }; company_name: string; created_at: string; issued_invoice_id: string | null; issued_invoice_status: string | null; issued_invoice_error: string | null }>;
   payments: Array<{ id: string; tax_type: string; period_label: string; amount: string; currency: string; due_date: string; status: string; company_name: string; recipient_name: string | null; bank_account_number: string | null; transfer_title: string | null; created_at: string; payment_reference: string | null; payment_source: string | null }>;
   stats: { clients_count: number; documents_count: number; payments_due_count: number; payments_due_total: string };
-  bankTransactions: Array<{ id: string; client_company_id: string; company_name: string; value_date: string; amount: string; currency: string; description: string; match_status: string; matched_payment_id: string | null }>;
+  bankTransactions: Array<{ id: string; client_company_id: string; company_name: string; value_date: string; direction: "credit" | "debit"; amount: string; currency: string; description: string; match_status: string; matched_payment_id: string | null }>;
 };
 
 const monthNames = ["Styczeń", "Luty", "Marzec", "Kwiecień", "Maj", "Czerwiec", "Lipiec", "Sierpień", "Wrzesień", "Październik", "Listopad", "Grudzień"];
@@ -119,6 +119,14 @@ const baseDocuments: WorkspaceDocument[] = [
 
 const formatMoney = (amount: number, currency = "PLN") =>
   new Intl.NumberFormat("pl-PL", { style: "currency", currency }).format(amount);
+
+function paymentTransferTitle(payment: Payment): string {
+  const description = payment.transferTitle?.trim() || `${payment.type} ${payment.period}`;
+  if (!payment.reference) return description;
+  const normalizedDescription = description.toUpperCase().replace(/[^A-Z0-9]/g, "");
+  const normalizedReference = payment.reference.toUpperCase().replace(/[^A-Z0-9]/g, "");
+  return normalizedDescription.includes(normalizedReference) ? description : `${description} / ${payment.reference}`;
+}
 
 function formatDocumentMoney(amount: string, currency: string) {
   return new Intl.NumberFormat("pl-PL", { style: "currency", currency }).format(Number(amount));
@@ -338,7 +346,7 @@ export function ClientPortal({ mode }: { mode: PortalMode }) {
       ...(modalPayment.recipientName ? [`Odbiorca: ${modalPayment.recipientName}`] : []),
       `Rachunek: ${modalPayment.bankAccountNumber}`,
       `Kwota: ${formatMoney(modalPayment.amount, modalPayment.currency)}`,
-      `Tytuł: ${modalPayment.transferTitle || `${modalPayment.type}, ${modalPayment.period}`}`,
+      `Tytuł: ${paymentTransferTitle(modalPayment)}`,
     ];
     try {
       await navigator.clipboard.writeText(lines.join("\n"));
@@ -677,18 +685,18 @@ export function ClientPortal({ mode }: { mode: PortalMode }) {
 
                   {production && canAccessOffice && overview?.bankTransactions?.length ? (
                     <div className="panel-card payments-table-card">
-                      <div className="panel-card-heading"><div><h3>Nierozpoznane transakcje</h3><p>Wpłaty z zaimportowanego wyciągu bankowego, których nie udało się dopasować automatycznie.</p></div></div>
+                      <div className="panel-card-heading"><div><h3>Transakcje do sprawdzenia</h3><p>Wpływy i wydatki z wyciągu, których nie udało się bezpiecznie dopasować automatycznie.</p></div></div>
                       <div className="full-payment-list unmatched-transactions">
                         {overview.bankTransactions.map((transaction) => {
-                          const candidates = overview.payments.filter((payment) => payment.status === "due" && payment.payment_source === "issued_invoice" && payment.company_name === transaction.company_name);
+                          const candidates = overview.payments.filter((payment) => payment.status === "due" && payment.company_name === transaction.company_name);
                           return (
                             <div key={transaction.id}>
-                              <span className={`payment-type ${transaction.match_status}`}>{transaction.match_status === "ambiguous" ? "Niezgodna kwota" : "Nierozpoznana"}</span>
-                              <div><strong>{transaction.company_name}</strong><small title={transaction.description}>{transaction.description.slice(0, 70)}{transaction.description.length > 70 ? "…" : ""}</small></div>
+                              <span className={`payment-type ${transaction.match_status}`}>{transaction.match_status === "ambiguous" ? "Niezgodne dane" : "Nierozpoznana"}</span>
+                              <div><strong>{transaction.direction === "credit" ? "Wpływ" : "Wydatek"} · {transaction.company_name}</strong><small title={transaction.description}>{transaction.description.slice(0, 70)}{transaction.description.length > 70 ? "…" : ""}</small></div>
                               <strong>{formatMoney(Number(transaction.amount))}</strong>
                               <select value={matchDrafts[transaction.id] || ""} onChange={(event) => setMatchDrafts((current) => ({ ...current, [transaction.id]: event.target.value }))}>
-                                <option value="" disabled>Dopasuj do faktury</option>
-                                {candidates.map((payment) => <option key={payment.id} value={payment.id}>{payment.period_label} · {formatMoney(Number(payment.amount))}</option>)}
+                                <option value="" disabled>Dopasuj do płatności</option>
+                                {candidates.map((payment) => <option key={payment.id} value={payment.id}>{taxLabels[payment.tax_type] || "Płatność"} · {payment.period_label} · {formatMoney(Number(payment.amount), payment.currency)}</option>)}
                               </select>
                               <button className="small-pay" disabled={!matchDrafts[transaction.id] || matchingId === transaction.id} onClick={() => void matchTransactionManually(transaction.id)}>{matchingId === transaction.id ? "Zapisywanie" : "Dopasuj"}</button>
                             </div>
@@ -749,8 +757,8 @@ export function ClientPortal({ mode }: { mode: PortalMode }) {
                     <label className={paymentMethod === "transfer" ? "selected" : ""}><input type="radio" name="method" value="transfer" checked={paymentMethod === "transfer"} onChange={() => setPaymentMethod("transfer")} /><b><Landmark size={18} /></b><span>Szybki przelew</span></label>
                   </fieldset> : null}
                   {!production && paymentMethod === "blik" && <label className="blik-field">Kod BLIK<input inputMode="numeric" maxLength={6} placeholder="Wpisz 6 cyfr" /></label>}
-                  {production && modalPayment.bankAccountNumber ? <div className="bank-transfer-details">{modalPayment.recipientName ? <div><span>Odbiorca</span><strong>{modalPayment.recipientName}</strong></div> : null}<div><span>Rachunek odbiorcy</span><strong>{modalPayment.bankAccountNumber.replace(/(.{2})(.{4})(.{4})(.{4})(.{4})(.{4})(.{4})/, "$1 $2 $3 $4 $5 $6 $7")}</strong></div><div><span>Tytuł przelewu</span><strong>{modalPayment.transferTitle || `${modalPayment.type}, ${modalPayment.period}`}</strong></div><button className="button button-dark button-wide" type="button" onClick={() => void copyPaymentData()}><Copy size={17} /> {paymentDataCopied ? "Dane skopiowane" : "Kopiuj dane do przelewu"}</button></div> : null}
-                  <div className="demo-notice"><CircleHelp size={17} /> {production ? (modalPayment.bankAccountNumber ? "To zwykły przelew na rachunek odbiorcy. Epito nie pobiera prowizji ani danych logowania do banku; bank może naliczyć opłatę zgodnie z taryfą. Status nie zmieni się bez niezależnego potwierdzenia." : "Brakuje rachunku odbiorcy. Biuro musi uzupełnić dane płatności, zanim będzie można przygotować przelew.") : "To jest interaktywny prototyp. Kliknięcie nie uruchamia prawdziwej płatności."}</div>
+                  {production && modalPayment.bankAccountNumber ? <div className="bank-transfer-details">{modalPayment.recipientName ? <div><span>Odbiorca</span><strong>{modalPayment.recipientName}</strong></div> : null}<div><span>Rachunek odbiorcy</span><strong>{modalPayment.bankAccountNumber.replace(/(.{2})(.{4})(.{4})(.{4})(.{4})(.{4})(.{4})/, "$1 $2 $3 $4 $5 $6 $7")}</strong></div>{modalPayment.reference ? <div><span>Referencja płatności</span><strong>{modalPayment.reference}</strong></div> : null}<div><span>Pełny tytuł przelewu</span><strong>{paymentTransferTitle(modalPayment)}</strong></div><button className="button button-dark button-wide" type="button" onClick={() => void copyPaymentData()}><Copy size={17} /> {paymentDataCopied ? "Dane skopiowane" : "Kopiuj dane do przelewu"}</button></div> : null}
+                  <div className="demo-notice"><CircleHelp size={17} /> {production ? (modalPayment.bankAccountNumber ? "Wklej pełny tytuł razem z referencją EP. Po imporcie wyciągu Epito sprawdzi także kwotę, walutę i kierunek transakcji, zanim oznaczy płatność jako opłaconą." : "Brakuje rachunku odbiorcy. Biuro musi uzupełnić dane płatności, zanim będzie można przygotować przelew.") : "To jest interaktywny prototyp. Kliknięcie nie uruchamia prawdziwej płatności."}</div>
                   {production ? (
                     canAccessOffice ? (
                       <button className="button button-primary button-wide modal-pay" onClick={() => void markPaymentPaid()} disabled={paying}>{paying ? "Zapisywanie" : "Oznacz jako zapłacone"} <ArrowRight size={18} /></button>

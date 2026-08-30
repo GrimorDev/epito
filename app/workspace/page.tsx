@@ -18,6 +18,7 @@ import {
   Settings,
   Sun,
   Trash2,
+  Upload,
   Users,
   WalletCards,
   X,
@@ -40,7 +41,7 @@ type Overview = {
   companies: Array<{ id: string; name: string; nip: string | null; email: string | null; phone: string | null; status: string; created_at: string; documents_count: number; payments_count: number }>;
   team: Array<{ id: string; email: string; full_name: string; role: string; status: string }>;
   documents: Array<{ id: string; name: string; category: string; status: string; document_year: number; document_month: number; amount: string | null; currency: string; company_name: string; created_at: string; issued_invoice_id: string | null; issued_invoice_number: string | null; issued_invoice_status: string | null; issued_invoice_error: string | null; issued_invoice_created_at: string | null; issued_invoice_updated_at: string | null; issued_invoice_environment: string | null; issued_invoice_reference: string | null; ksef_number: string | null; structured_data: { vat_whitelist?: { status: string; message: string | null } } }>;
-  payments: Array<{ id: string; tax_type: string; period_label: string; amount: string; currency: string; due_date: string; status: string; company_name: string; recipient_name: string | null; bank_account_number: string | null; transfer_title: string | null; created_at: string }>;
+  payments: Array<{ id: string; tax_type: string; period_label: string; amount: string; currency: string; due_date: string; status: string; company_name: string; recipient_name: string | null; bank_account_number: string | null; transfer_title: string | null; payment_reference: string; created_at: string }>;
   stats: { clients_count: number; documents_count: number; payments_due_count: number; payments_due_total: string };
   ksefConnections: Array<{ id: string; client_company_id: string; client_company_name: string; environment: string; nip: string; status: string; last_synced_at: string | null; last_error: string | null; created_at: string }>;
 };
@@ -151,6 +152,8 @@ export function OfficeWorkspacePage() {
   const [connectionMessage, setConnectionMessage] = useState("");
   const [jpkFaPending, setJpkFaPending] = useState(false);
   const [jpkFaMessage, setJpkFaMessage] = useState("");
+  const [statementPending, setStatementPending] = useState(false);
+  const [statementMessage, setStatementMessage] = useState("");
   const [showIssueInvoiceModal, setShowIssueInvoiceModal] = useState(false);
   const [issueInvoiceMessage, setIssueInvoiceMessage] = useState("");
   const [syncingConnectionId, setSyncingConnectionId] = useState<string | null>(null);
@@ -268,6 +271,29 @@ export function OfficeWorkspacePage() {
       setJpkFaMessage(reason instanceof Error ? reason.message : "Nie udało się zaimportować pliku JPK_FA.");
     } finally {
       setJpkFaPending(false);
+    }
+  }
+
+  async function importBankStatement(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const formElement = event.currentTarget;
+    setStatementPending(true);
+    setStatementMessage("");
+    try {
+      const response = await fetch("/api/workspace/documents/bank-statement", {
+        method: "POST",
+        body: new FormData(formElement),
+      });
+      const payload = (await response.json()) as { error?: string; format?: string; imported?: number; matched?: number; ambiguous?: number; unmatched?: number; skipped?: number };
+      if (!response.ok) throw new Error(payload.error || "Nie udało się zaimportować wyciągu.");
+      formElement.reset();
+      const formatLabel = payload.format === "camt053" ? "CAMT.053" : payload.format?.toUpperCase() || "wyciągu";
+      setStatementMessage(`${formatLabel}: zaimportowano ${payload.imported ?? 0}, automatycznie rozliczono ${payload.matched ?? 0}, do sprawdzenia ${(payload.ambiguous ?? 0) + (payload.unmatched ?? 0)}${payload.skipped ? `, pominięto duplikaty ${payload.skipped}` : ""}.`);
+      await loadOverview();
+    } catch (reason) {
+      setStatementMessage(reason instanceof Error ? reason.message : "Nie udało się zaimportować wyciągu.");
+    } finally {
+      setStatementPending(false);
     }
   }
 
@@ -439,22 +465,33 @@ export function OfficeWorkspacePage() {
                     {data.payments.length ? <PaymentsTable payments={data.payments} /> : <Empty title="Brak płatności" text="Dodaj pierwszą płatność dla klienta, aby rozpocząć pilnowanie terminów." />}
                   </section>
                   {canCreateClients ? (
-                    <section className={`${styles.panel} ${styles.formPanel}`}>
-                      <h2>Nowa płatność</h2><p>Dodaj kwotę i termin widoczny dla klienta.</p>
-                      <form className={styles.singleForm} onSubmit={(event) => submitForm(event, "/api/workspace/payments", setPaymentPending, setPaymentMessage, "Płatność została dodana.")}>
-                        <div className={styles.field}><label htmlFor="paymentCompany">Klient</label><select id="paymentCompany" name="clientCompanyId" required defaultValue=""><option value="" disabled>Wybierz firmę</option>{data.companies.map((company) => <option key={company.id} value={company.id}>{company.name}</option>)}</select></div>
-                        <div className={styles.field}><label htmlFor="taxType">Rodzaj</label><select id="taxType" name="taxType" defaultValue="vat"><option value="vat">VAT</option><option value="pit">PIT</option><option value="cit">CIT</option><option value="zus">ZUS</option><option value="invoice">Faktura</option><option value="other">Inna płatność</option></select></div>
-                        <div className={styles.field}><label htmlFor="periodLabel">Okres</label><input id="periodLabel" name="periodLabel" required maxLength={80} placeholder="np. lipiec 2026" /></div>
-                        <div className={styles.field}><label htmlFor="amount">Kwota</label><input id="amount" name="amount" required type="number" min="0.01" step="0.01" inputMode="decimal" /></div>
-                        <div className={styles.field}><label htmlFor="dueDate">Termin płatności</label><input id="dueDate" name="dueDate" required type="date" /></div>
-                        <div className={styles.field}><label htmlFor="recipientName">Nazwa odbiorcy</label><input id="recipientName" name="recipientName" maxLength={180} placeholder="np. Urząd Skarbowy lub nazwa sprzedawcy" /></div>
-                        <div className={styles.field}><label htmlFor="bankAccountNumber">Rachunek do przelewu</label><input id="bankAccountNumber" name="bankAccountNumber" inputMode="numeric" maxLength={34} placeholder="26 cyfr, opcjonalnie" /><small>Klient zobaczy gotowe dane do zwykłego przelewu. Epito nie pośredniczy w przepływie środków.</small></div>
-                        <div className={styles.field}><label htmlFor="transferTitle">Tytuł przelewu</label><input id="transferTitle" name="transferTitle" maxLength={140} placeholder="np. VAT 07/2026, NIP 1234567890" /></div>
-                        <FormMessage message={paymentMessage} />
-                        {!data.companies.length ? <div className={styles.error}>Najpierw dodaj klienta biura.</div> : null}
-                        <button className={styles.buttonPrimary} type="submit" disabled={paymentPending || !data.companies.length}>{paymentPending ? "Dodaję płatność…" : "Dodaj płatność"}</button>
-                      </form>
-                    </section>
+                    <div className={styles.stack}>
+                      <section className={`${styles.panel} ${styles.formPanel}`}>
+                        <h2>Nowa płatność</h2><p>Dodaj kwotę i termin widoczny dla klienta.</p>
+                        <form className={styles.singleForm} onSubmit={(event) => submitForm(event, "/api/workspace/payments", setPaymentPending, setPaymentMessage, "Płatność została dodana z własną referencją przelewu.")}>
+                          <div className={styles.field}><label htmlFor="paymentCompany">Klient</label><select id="paymentCompany" name="clientCompanyId" required defaultValue=""><option value="" disabled>Wybierz firmę</option>{data.companies.map((company) => <option key={company.id} value={company.id}>{company.name}</option>)}</select></div>
+                          <div className={styles.field}><label htmlFor="taxType">Rodzaj</label><select id="taxType" name="taxType" defaultValue="vat"><option value="vat">VAT</option><option value="pit">PIT</option><option value="cit">CIT</option><option value="zus">ZUS</option><option value="invoice">Faktura</option><option value="other">Inna płatność</option></select></div>
+                          <div className={styles.field}><label htmlFor="periodLabel">Okres</label><input id="periodLabel" name="periodLabel" required maxLength={80} placeholder="np. lipiec 2026" /></div>
+                          <div className={styles.field}><label htmlFor="amount">Kwota</label><input id="amount" name="amount" required type="number" min="0.01" step="0.01" inputMode="decimal" /></div>
+                          <div className={styles.field}><label htmlFor="dueDate">Termin płatności</label><input id="dueDate" name="dueDate" required type="date" /></div>
+                          <div className={styles.field}><label htmlFor="recipientName">Nazwa odbiorcy</label><input id="recipientName" name="recipientName" maxLength={180} placeholder="np. Urząd Skarbowy lub nazwa sprzedawcy" /></div>
+                          <div className={styles.field}><label htmlFor="bankAccountNumber">Rachunek do przelewu</label><input id="bankAccountNumber" name="bankAccountNumber" inputMode="numeric" maxLength={34} placeholder="26 cyfr, opcjonalnie" /><small>Klient zobaczy gotowe dane do zwykłego przelewu. Epito nie pośredniczy w przepływie środków.</small></div>
+                          <div className={styles.field}><label htmlFor="transferTitle">Opis w tytule przelewu</label><input id="transferTitle" name="transferTitle" maxLength={110} placeholder="np. VAT 07/2026" /><small>System automatycznie dopisze unikalną referencję EP. Nie usuwaj jej z tytułu przelewu.</small></div>
+                          <FormMessage message={paymentMessage} />
+                          {!data.companies.length ? <div className={styles.error}>Najpierw dodaj klienta biura.</div> : null}
+                          <button className={styles.buttonPrimary} type="submit" disabled={paymentPending || !data.companies.length}>{paymentPending ? "Dodaję płatność…" : "Dodaj płatność"}</button>
+                        </form>
+                      </section>
+                      <section className={`${styles.panel} ${styles.formPanel}`}>
+                        <h2>Rozlicz z wyciągu</h2><p>Import dopasuje transakcje po referencji, kwocie, walucie i kierunku przepływu.</p>
+                        <form className={styles.singleForm} onSubmit={importBankStatement}>
+                          <div className={styles.field}><label htmlFor="statementCompany">Klient</label><select id="statementCompany" name="clientCompanyId" required defaultValue=""><option value="" disabled>Wybierz firmę</option>{data.companies.map((company) => <option key={company.id} value={company.id}>{company.name}</option>)}</select></div>
+                          <div className={styles.field}><label htmlFor="statementFile">Wyciąg bankowy</label><input id="statementFile" name="file" type="file" accept=".sta,.940,.txt,.csv,.xml,text/csv,text/plain,application/xml" required /><small>Obsługiwane formaty: MT940, CAMT.053 i CSV. Maksymalnie 10 MB.</small></div>
+                          <FormMessage message={statementMessage} />
+                          <button className={styles.buttonSecondary} type="submit" disabled={statementPending || !data.companies.length}><Upload size={18} /> {statementPending ? "Uzgadniam…" : "Importuj i uzgodnij"}</button>
+                        </form>
+                      </section>
+                    </div>
                   ) : null}
                 </div>
               ) : null}
@@ -771,7 +808,7 @@ function DocumentsTable({ documents, onChanged }: { documents: Overview["documen
 }
 
 function PaymentsTable({ payments }: { payments: Overview["payments"] }) {
-  return <div className={styles.tableWrap}><table className={styles.table}><thead><tr><th>Płatność</th><th>Klient</th><th>Okres</th><th>Termin</th><th>Kwota</th><th>Status</th></tr></thead><tbody>{payments.map((payment) => <tr key={payment.id}><td><strong>{paymentTypeLabel[payment.tax_type] || "Inna płatność"}</strong></td><td>{payment.company_name}</td><td>{payment.period_label}</td><td>{new Date(`${payment.due_date}T00:00:00`).toLocaleDateString("pl-PL")}</td><td><strong>{formatMoney(payment.amount, payment.currency)}</strong></td><td><span className={styles.status}>{paymentStatusLabel[payment.status] || "Nieznany"}</span></td></tr>)}</tbody></table></div>;
+  return <div className={styles.tableWrap}><table className={styles.table}><thead><tr><th>Płatność</th><th>Klient</th><th>Okres</th><th>Termin</th><th>Kwota</th><th>Status</th></tr></thead><tbody>{payments.map((payment) => <tr key={payment.id}><td><strong>{paymentTypeLabel[payment.tax_type] || "Inna płatność"}</strong><small>Ref. {payment.payment_reference}</small></td><td>{payment.company_name}</td><td>{payment.period_label}</td><td>{new Date(`${payment.due_date}T00:00:00`).toLocaleDateString("pl-PL")}</td><td><strong>{formatMoney(payment.amount, payment.currency)}</strong></td><td><span className={styles.status}>{paymentStatusLabel[payment.status] || "Nieznany"}</span></td></tr>)}</tbody></table></div>;
 }
 
 function ConnectionsTable({
