@@ -155,10 +155,13 @@ try {
       let supervisorId;
       if (existingSupervisor.rowCount === 1) {
         supervisorId = existingSupervisor.rows[0].id;
-        await client.query(
-          "update users set status = 'active', platform_role = 'supervisor', updated_at = now() where id = $1",
+        const supervisorState = await client.query(
+          "select status, platform_role from users where id = $1",
           [supervisorId],
         );
+        if (supervisorState.rows[0]?.status !== "active" || supervisorState.rows[0]?.platform_role !== "supervisor") {
+          throw new Error("Configured supervisor exists but is not an active supervisor. Restore it explicitly from an administrator session.");
+        }
       } else {
         const inserted = await client.query(
           "insert into users (email, full_name, status, platform_role) values ($1, $2, 'active', 'supervisor') returning id",
@@ -168,14 +171,7 @@ try {
       }
 
       await client.query(
-        `
-          insert into user_credentials (user_id, password_hash)
-          values ($1, $2)
-          on conflict (user_id) do update
-            set password_hash = excluded.password_hash,
-                password_changed_at = now(),
-                updated_at = now()
-        `,
+        "insert into user_credentials (user_id, password_hash) values ($1, $2) on conflict (user_id) do nothing",
         [supervisorId, passwordHash],
       );
       await client.query("commit");

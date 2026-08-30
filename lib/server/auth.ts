@@ -1,6 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import type { NextRequest, NextResponse } from "next/server";
 import { getRedis } from "./redis";
+import { getPool } from "./database";
 import type { PlatformRole } from "../platform-access";
 
 const SESSION_COOKIE = "epito_session";
@@ -15,6 +16,8 @@ export type AuthSession = {
   tenantSlug: string | null;
   tenantName: string | null;
   membershipRole: "owner" | "admin" | "accountant" | "employee" | "viewer" | null;
+  accessScope: "tenant" | "assigned_companies";
+  authVersion: number;
   createdAt: string;
 };
 
@@ -121,7 +124,50 @@ export async function getSession(request: NextRequest): Promise<AuthSession | nu
   if (!rawSession) return null;
 
   try {
-    return JSON.parse(rawSession) as AuthSession;
+    const stored = JSON.parse(rawSession) as AuthSession;
+    if (!stored.userId || !Number.isInteger(stored.authVersion)) {
+      await redis.del(sessionKey(token));
+      return null;
+    }
+
+    const pool = await getPool();
+    const validated = await pool.query<{
+      email: string;
+      full_name: string;
+      platform_role: PlatformRole;
+      auth_version: number;
+      tenant_id: string | null;
+      tenant_slug: string | null;
+      tenant_name: string | null;
+      membership_role: AuthSession["membershipRole"];
+      access_scope: AuthSession["accessScope"];
+    }>("select * from epito_validate_session($1, $2, $3)", [
+      stored.userId,
+      stored.tenantId,
+      stored.authVersion,
+    ]);
+    const row = validated.rows[0];
+    if (!row) {
+      await redis.del(sessionKey(token));
+      return null;
+    }
+
+    const session: AuthSession = {
+      ...stored,
+      email: row.email,
+      fullName: row.full_name,
+      platformRole: row.platform_role,
+      authVersion: row.auth_version,
+      tenantId: row.tenant_id,
+      tenantSlug: row.tenant_slug,
+      tenantName: row.tenant_name,
+      membershipRole: row.membership_role,
+      accessScope: row.access_scope,
+    };
+    if (JSON.stringify(session) !== rawSession) {
+      await redis.set(sessionKey(token), JSON.stringify(session), "KEEPTTL", "XX");
+    }
+    return session;
   } catch {
     await redis.del(sessionKey(token));
     return null;
@@ -130,7 +176,7 @@ export async function getSession(request: NextRequest): Promise<AuthSession | nu
 
 export async function updateSessionTenant(
   request: NextRequest,
-  tenant: Pick<AuthSession, "tenantId" | "tenantSlug" | "tenantName" | "membershipRole">,
+  tenant: Pick<AuthSession, "tenantId" | "tenantSlug" | "tenantName" | "membershipRole" | "accessScope">,
 ) {
   const token = request.cookies.get(SESSION_COOKIE)?.value;
   if (!token) return null;
@@ -151,9 +197,10 @@ export async function destroySession(request: NextRequest, response: NextRespons
     const redis = await getRedis();
     await redis.del(sessionKey(token));
   }
+  const forwardedProto = request.headers.get("x-forwarded-proto")?.split(",")[0]?.trim();
   response.cookies.set(SESSION_COOKIE, "", {
     httpOnly: true,
-    secure: request.nextUrl.protocol === "https:",
+    secure: forwardedProto === "https" || request.nextUrl.protocol === "https:",
     sameSite: "strict",
     path: "/",
     maxAge: 0,

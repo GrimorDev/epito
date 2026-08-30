@@ -27,11 +27,12 @@ import styles from "../secure.module.css";
 import { ClientPortal } from "../panel/page";
 import { IssueInvoiceModal, issuedInvoiceStatusLabels } from "../panel/workspace-sections";
 import { canAccessOffice as canAccessOfficeRole, canViewFinancials } from "@/lib/tenant-access";
+import { canEditTenantData } from "@/lib/platform-access";
 
 type Session = {
   fullName: string;
   email: string;
-  platformRole: "none" | "support" | "supervisor";
+  platformRole: string;
   tenantName: string | null;
   membershipRole: "owner" | "admin" | "accountant" | "employee" | "viewer" | null;
 };
@@ -317,10 +318,10 @@ export function OfficeWorkspacePage() {
     }
   }
 
-  const canCreateClients = session?.platformRole === "supervisor" || ["owner", "admin", "accountant"].includes(session?.membershipRole || "");
-  const canManageTeam = session?.platformRole === "supervisor" || ["owner", "admin"].includes(session?.membershipRole || "");
-  const canManageSettings = session?.platformRole === "supervisor" || ["owner", "admin"].includes(session?.membershipRole || "");
-  const canManageIntegrations = session?.platformRole === "supervisor" || ["owner", "admin"].includes(session?.membershipRole || "");
+  const canCreateClients = canEditTenantData(session?.platformRole) || ["owner", "admin", "accountant"].includes(session?.membershipRole || "");
+  const canManageTeam = canEditTenantData(session?.platformRole) || ["owner", "admin"].includes(session?.membershipRole || "");
+  const canManageSettings = canEditTenantData(session?.platformRole) || ["owner", "admin"].includes(session?.membershipRole || "");
+  const canManageIntegrations = canEditTenantData(session?.platformRole) || ["owner", "admin"].includes(session?.membershipRole || "");
   const canSeeFinancials = canViewFinancials(session?.membershipRole, session?.platformRole);
 
   const navigation: Array<{ id: Tab; label: string; icon: typeof LayoutDashboard }> = [
@@ -579,6 +580,7 @@ function CompaniesTable({
   const [draftPhone, setDraftPhone] = useState("");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
+  const [accessCompany, setAccessCompany] = useState<Overview["companies"][number] | null>(null);
 
   if (!companies.length) return <Empty title="Brak klientów" text="Dodaj pierwszą firmę, aby rozpocząć pracę na rzeczywistych danych." />;
 
@@ -658,6 +660,7 @@ function CompaniesTable({
                 <td><span className={styles.status}>{accountStatusLabel[company.status] || "Nieznany"}</span></td>
                 {editable ? (
                   <td><div className={styles.rowActions}>
+                    <button type="button" onClick={() => setAccessCompany(company)} aria-label={`Zarządzaj dostępem do ${company.name}`} title="Konta klienta"><Users size={17} /></button>
                     <button type="button" onClick={() => beginEdit(company)} aria-label={`Edytuj ${company.name}`} title="Edytuj klienta"><Pencil size={17} /></button>
                     <button className={styles.dangerIcon} type="button" disabled={pending} onClick={() => void deleteClient(company.id, company.name)} aria-label={`Usuń ${company.name}`} title="Usuń klienta"><Trash2 size={17} /></button>
                   </div>
@@ -668,6 +671,128 @@ function CompaniesTable({
           )}
         </tbody>
       </table>
+      {accessCompany ? <ClientAccessModal company={accessCompany} onClose={() => setAccessCompany(null)} /> : null}
+    </div>
+  );
+}
+
+type ClientAccessData = {
+  company: { id: string; name: string };
+  members: Array<{ id: string; email: string; full_name: string; role: string; status: string; last_login_at: string | null }>;
+  invitations: Array<{ id: string; email: string; full_name: string; membership_role: string; status: string; expires_at: string; accepted_at: string | null; created_at: string }>;
+};
+
+const invitationStatusLabel: Record<string, string> = {
+  pending: "Oczekuje",
+  accepted: "Aktywowane",
+  revoked: "Anulowane",
+  expired: "Wygasło",
+};
+
+function ClientAccessModal({ company, onClose }: { company: Overview["companies"][number]; onClose: () => void }) {
+  const [data, setData] = useState<ClientAccessData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState("");
+  const [activationUrl, setActivationUrl] = useState("");
+  const [deliveryMessage, setDeliveryMessage] = useState("");
+
+  const load = useCallback(async () => {
+    const response = await fetch(`/api/workspace/clients/${company.id}/access`, { cache: "no-store" });
+    const payload = (await response.json()) as ClientAccessData & { error?: string };
+    if (!response.ok) throw new Error(payload.error || "Nie udało się pobrać dostępów.");
+    setData(payload);
+  }, [company.id]);
+
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === "Escape") onClose(); };
+    window.addEventListener("keydown", closeOnEscape);
+    const loadTimer = window.setTimeout(() => {
+      void load()
+        .catch((reason) => setError(reason instanceof Error ? reason.message : "Nie udało się pobrać dostępów."))
+        .finally(() => setLoading(false));
+    }, 0);
+    return () => {
+      window.clearTimeout(loadTimer);
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [load, onClose]);
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const values = Object.fromEntries(new FormData(form).entries());
+    setPending(true);
+    setError("");
+    setActivationUrl("");
+    try {
+      const response = await fetch(`/api/workspace/clients/${company.id}/access`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(values),
+      });
+      const payload = (await response.json()) as { error?: string; activationUrl?: string; emailQueued?: boolean };
+      if (!response.ok || !payload.activationUrl) throw new Error(payload.error || "Nie udało się utworzyć zaproszenia.");
+      setActivationUrl(payload.activationUrl);
+      setDeliveryMessage(payload.emailQueued ? "Wiadomość została przekazana do kolejki wysyłkowej." : "SMTP jest niedostępne. Skopiuj link i przekaż go klientowi bezpiecznym kanałem.");
+      form.reset();
+      await load();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Nie udało się utworzyć zaproszenia.");
+    } finally {
+      setPending(false);
+    }
+  }
+
+  async function revoke(invitationId: string) {
+    setPending(true);
+    setError("");
+    try {
+      const response = await fetch(`/api/workspace/clients/${company.id}/access`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ invitationId }),
+      });
+      const payload = (await response.json()) as { error?: string };
+      if (!response.ok) throw new Error(payload.error || "Nie udało się anulować zaproszenia.");
+      await load();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Nie udało się anulować zaproszenia.");
+    } finally {
+      setPending(false);
+    }
+  }
+
+  return (
+    <div className={styles.backdrop} role="dialog" aria-modal="true" aria-labelledby="client-access-title" onMouseDown={(event) => { if (event.currentTarget === event.target) onClose(); }}>
+      <section className={`${styles.modal} ${styles.accessModal}`}>
+        <header className={styles.modalHeader}>
+          <div><span className={styles.modalEyebrow}>DOSTĘP KLIENTA</span><h2 id="client-access-title">{company.name}</h2><p>Konta widzą wyłącznie dane tej firmy. Izolację wymusza PostgreSQL RLS.</p></div>
+          <button className={`${styles.buttonGhost} ${styles.iconButton}`} type="button" onClick={onClose} aria-label="Zamknij"><X size={20} /></button>
+        </header>
+        {loading ? <div className={styles.loading}>Ładowanie dostępów…</div> : (
+          <div className={styles.accessLayout}>
+            <div>
+              <h3>Aktywne konta</h3>
+              {data?.members.length ? <div className={styles.accessList}>{data.members.map((member) => <article key={member.id}><div><strong>{member.full_name}</strong><small>{member.email}</small></div><span className={styles.status}>{member.role === "member" ? "Dodawanie dokumentów" : "Tylko odczyt"}</span></article>)}</div> : <p className={styles.readOnlyNotice}>Ten klient nie ma jeszcze aktywnego konta.</p>}
+              <h3>Historia zaproszeń</h3>
+              {data?.invitations.length ? <div className={styles.accessList}>{data.invitations.map((invitation) => <article key={invitation.id}><div><strong>{invitation.full_name}</strong><small>{invitation.email} · {new Date(invitation.created_at).toLocaleString("pl-PL")}</small></div><span className={styles.status}>{invitationStatusLabel[invitation.status] || invitation.status}</span>{invitation.status === "pending" ? <button className={styles.buttonGhost} type="button" disabled={pending} onClick={() => void revoke(invitation.id)}>Anuluj</button> : null}</article>)}</div> : <p className={styles.readOnlyNotice}>Brak wcześniejszych zaproszeń.</p>}
+            </div>
+            <form className={styles.singleForm} onSubmit={submit}>
+              <h3>Nowe zaproszenie</h3>
+              <div className={styles.field}><label htmlFor="clientAccessName">Imię i nazwisko</label><input id="clientAccessName" name="fullName" required maxLength={120} /></div>
+              <div className={styles.field}><label htmlFor="clientAccessEmail">Adres e-mail</label><input id="clientAccessEmail" name="email" type="email" required maxLength={254} /></div>
+              <div className={styles.field}><label htmlFor="clientAccessRole">Zakres</label><select id="clientAccessRole" name="role" defaultValue="viewer"><option value="viewer">Tylko podgląd</option><option value="employee">Podgląd i dodawanie dokumentów</option></select></div>
+              {activationUrl ? <div className={styles.portalSuccess}><span><strong>Zaproszenie gotowe</strong><small>{deliveryMessage}</small></span><a href={activationUrl} target="_blank" rel="noreferrer">Otwórz link</a><button type="button" onClick={() => void navigator.clipboard.writeText(activationUrl)}>Kopiuj</button></div> : null}
+              {error ? <div className={styles.error} role="alert">{error}</div> : null}
+              <button className={styles.buttonPrimary} type="submit" disabled={pending}>{pending ? "Tworzę zaproszenie…" : "Wyślij zaproszenie"}</button>
+            </form>
+          </div>
+        )}
+      </section>
     </div>
   );
 }
@@ -857,6 +982,7 @@ function ConnectionsTable({
 }
 
 function PasswordForm() {
+  const router = useRouter();
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState("");
 
@@ -871,8 +997,12 @@ function PasswordForm() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(Object.fromEntries(new FormData(formElement).entries())),
       });
-      const payload = (await response.json()) as { error?: string };
+      const payload = (await response.json()) as { error?: string; reauthenticate?: boolean };
       if (!response.ok) throw new Error(payload.error || "Nie udało się zmienić hasła.");
+      if (payload.reauthenticate) {
+        router.replace("/logowanie?haslo=zmienione");
+        return;
+      }
       formElement.reset();
       setMessage("Hasło zostało zmienione.");
     } catch (reason) {

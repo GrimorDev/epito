@@ -5,21 +5,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSession, isSameOrigin } from "@/lib/server/auth";
 import { withTenantTransaction } from "@/lib/server/database";
 import { enqueueBackgroundJob } from "@/lib/server/queues";
+import { validateDocumentUpload } from "@/lib/server/file-validation";
 import { canEditTenantData } from "@/lib/platform-access";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 const MAX_FILE_SIZE = 15 * 1024 * 1024;
-const allowedMimeTypes = new Set([
-  "application/pdf",
-  "image/jpeg",
-  "image/png",
-  "text/csv",
-  "text/xml",
-  "application/xml",
-]);
-
 function uploadsRoot() {
   return path.resolve(/* turbopackIgnore: true */ process.env.EPITO_UPLOADS_DIR?.trim() || "/app/data/uploads");
 }
@@ -33,16 +25,19 @@ export async function POST(request: NextRequest) {
   const form = await request.formData().catch(() => null);
   const file = form?.get("file");
   const requestedCompanyId = form?.get("clientCompanyId");
-  if (!(file instanceof File) || file.size < 1 || file.size > MAX_FILE_SIZE || !allowedMimeTypes.has(file.type)) {
+  if (!(file instanceof File) || file.size < 1 || file.size > MAX_FILE_SIZE) {
     return NextResponse.json({ error: "Dodaj plik PDF, JPG, PNG, CSV lub XML o wielkości do 15 MB." }, { status: 400 });
   }
 
   const originalName = file.name.trim().slice(0, 240) || "Dokument";
-  const extension = path.extname(originalName).toLowerCase().replace(/[^a-z0-9.]/g, "").slice(0, 10);
   const bytes = Buffer.from(await file.arrayBuffer());
+  const validatedFile = validateDocumentUpload(bytes, originalName, file.type);
+  if (!validatedFile) {
+    return NextResponse.json({ error: "Zawartość pliku nie odpowiada obsługiwanemu formatowi PDF, JPG, PNG, CSV lub XML." }, { status: 400 });
+  }
   const checksum = createHash("sha256").update(bytes).digest("hex");
   const now = new Date();
-  const relativeKey = `${session.tenantId}/${now.getUTCFullYear()}/${String(now.getUTCMonth() + 1).padStart(2, "0")}/${randomUUID()}${extension}`;
+  const relativeKey = `${session.tenantId}/${now.getUTCFullYear()}/${String(now.getUTCMonth() + 1).padStart(2, "0")}/${randomUUID()}${validatedFile.extension}`;
   const root = uploadsRoot();
   const absolutePath = path.resolve(root, relativeKey);
   if (!absolutePath.startsWith(`${root}${path.sep}`)) return NextResponse.json({ error: "Nieprawidłowa ścieżka pliku." }, { status: 400 });
@@ -77,7 +72,7 @@ export async function POST(request: NextRequest) {
           storage_key, mime_type, file_size, checksum_sha256, document_year, document_month
         ) values ($1, $2, $3, $4, 'other', 'upload', 'uploaded', $5, $6, $7, $8, $9, $10)
         returning id
-      `, [session.tenantId, company.rows[0].id, session.userId, originalName, relativeKey, file.type, file.size, checksum, now.getUTCFullYear(), now.getUTCMonth() + 1]);
+      `, [session.tenantId, company.rows[0].id, session.userId, originalName, relativeKey, validatedFile.mimeType, file.size, checksum, now.getUTCFullYear(), now.getUTCMonth() + 1]);
       await client.query(
         "insert into audit_log (tenant_id, actor_user_id, action, entity_type, entity_id, after_data) values ($1, $2, 'document.uploaded', 'document', $3, jsonb_build_object('name', $4::text, 'size', $5::bigint))",
         [session.tenantId, session.userId, created.rows[0].id, originalName, file.size],

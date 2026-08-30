@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/server/auth";
 import { withTenantTransaction } from "@/lib/server/database";
-import { canManageTeam, canViewFinancials } from "@/lib/tenant-access";
+import { canAccessOffice, canManageTeam, canViewFinancials } from "@/lib/tenant-access";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -11,6 +11,10 @@ export async function GET(request: NextRequest) {
   if (!session?.tenantId) {
     return NextResponse.json({ error: "Wybierz organizację." }, { status: 401 });
   }
+
+  const canTeam = canManageTeam(session.membershipRole, session.platformRole);
+  const canFinancials = canViewFinancials(session.membershipRole, session.platformRole);
+  const canOffice = canAccessOffice(session.membershipRole, session.platformRole);
 
   const data = await withTenantTransaction(session.tenantId, session.userId, async (client) => {
     const [tenantResult, companiesResult, teamResult, documentsResult, paymentsResult, statsResult, ksefConnectionsResult, bankTransactionsResult] = await Promise.all([
@@ -36,13 +40,13 @@ export async function GET(request: NextRequest) {
         where company.deleted_at is null
         order by company.created_at desc
       `),
-      client.query<{ id: string; email: string; full_name: string; role: string; status: string }>(`
+      canTeam ? client.query<{ id: string; email: string; full_name: string; role: string; status: string }>(`
         select user_row.id, user_row.email, user_row.full_name, membership.role, membership.status
         from tenant_memberships membership
         join users user_row on user_row.id = membership.user_id
         where membership.tenant_id = $1 and user_row.deleted_at is null
         order by case membership.role when 'owner' then 0 when 'admin' then 1 else 2 end, user_row.full_name
-      `, [session.tenantId]),
+      `, [session.tenantId]) : Promise.resolve({ rows: [] }),
       client.query<{
         id: string;
         name: string;
@@ -85,7 +89,7 @@ export async function GET(request: NextRequest) {
         order by document.created_at desc
         limit 250
       `),
-      client.query<{
+      canFinancials ? client.query<{
         id: string;
         tax_type: string;
         period_label: string;
@@ -114,7 +118,7 @@ export async function GET(request: NextRequest) {
         left join issued_invoices invoice on invoice.document_id = payment.document_id
         order by payment.due_date asc, payment.created_at desc
         limit 250
-      `),
+      `) : Promise.resolve({ rows: [] }),
       client.query<{ clients_count: number; documents_count: number; payments_due_count: number; payments_due_total: string }>(`
         select
           (select count(*)::int from client_companies where deleted_at is null) as clients_count,
@@ -122,7 +126,7 @@ export async function GET(request: NextRequest) {
           (select count(*)::int from payments where status in ('due', 'failed')) as payments_due_count,
           (select coalesce(sum(amount), 0)::text from payments where status in ('due', 'failed')) as payments_due_total
       `),
-      client.query<{
+      canOffice ? client.query<{
         id: string;
         client_company_id: string;
         client_company_name: string;
@@ -140,8 +144,8 @@ export async function GET(request: NextRequest) {
         join client_companies company on company.id = connection.client_company_id
         where company.deleted_at is null
         order by company.name
-      `),
-      client.query<{
+      `) : Promise.resolve({ rows: [] }),
+      canOffice ? client.query<{
         id: string;
         client_company_id: string;
         company_name: string;
@@ -161,7 +165,7 @@ export async function GET(request: NextRequest) {
         where transaction.match_status != 'matched'
         order by transaction.value_date desc, transaction.created_at desc
         limit 100
-      `),
+      `) : Promise.resolve({ rows: [] }),
     ]);
 
     return {
@@ -180,17 +184,12 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Organizacja nie istnieje." }, { status: 404 });
   }
 
-  // Every membership role reached this endpoint with only a tenantId check
-  // before — Pracownik/Podgląd got the full team roster, and everyone got
-  // full payment/KSeF data (incl. bank account numbers) regardless of role.
-  const canTeam = canManageTeam(session.membershipRole, session.platformRole);
-  const canFinancials = canViewFinancials(session.membershipRole, session.platformRole);
   return NextResponse.json({
     ...data,
     team: canTeam ? data.team : [],
     payments: canFinancials ? data.payments : [],
-    ksefConnections: canFinancials ? data.ksefConnections : [],
-    bankTransactions: canFinancials ? data.bankTransactions : [],
+    ksefConnections: canOffice ? data.ksefConnections : [],
+    bankTransactions: canOffice ? data.bankTransactions : [],
     stats: canFinancials ? data.stats : { ...data.stats, payments_due_count: 0, payments_due_total: "0" },
   });
 }

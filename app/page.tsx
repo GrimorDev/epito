@@ -305,7 +305,7 @@ export default function Home() {
         <Link className="brand brand-footer" href="/"><span className="brand-mark" aria-hidden="true">E</span><span><strong>EPITO</strong><small>portal dla biur</small></span></Link>
         <p>Spokojniejsza komunikacja między biurem rachunkowym a klientem.</p>
         <div><a href="#funkcje">Funkcje</a><a href="#cennik">Cennik</a><Link href="/panel">Demo panelu</Link><Link href="/logowanie">Logowanie B2B</Link></div>
-        <small>© 2026 Epito. Koncepcja demonstracyjna.</small>
+        <small>© 2026 Epito. Portal klienta dla biur rachunkowych.</small>
       </footer>
     </main>
   );

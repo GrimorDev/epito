@@ -96,6 +96,8 @@ export async function POST(request: NextRequest) {
     tenantSlug: primaryMembership?.tenantSlug ?? null,
     tenantName: primaryMembership?.tenantName ?? null,
     membershipRole: primaryMembership?.membershipRole ?? null,
+    accessScope: primaryMembership?.accessScope ?? "tenant",
+    authVersion: identity.authVersion,
   });
 
   const response = NextResponse.json({

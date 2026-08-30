@@ -31,6 +31,7 @@ export async function PATCH(request: NextRequest) {
       ) select previous.previous_role from previous join updated on true
     `, [session.tenantId, userId, role]);
     if (!result.rowCount) return false;
+    await client.query("update users set auth_version = auth_version + 1, updated_at = now() where id = $1", [userId]);
     await client.query("insert into audit_log (tenant_id, actor_user_id, action, entity_type, entity_id, before_data, after_data) values ($1, $2, 'membership.role_changed', 'user', $3, jsonb_build_object('role', $4::text), jsonb_build_object('role', $5::text))", [session.tenantId, session.userId, userId, result.rows[0].previous_role, role]);
     return true;
   });

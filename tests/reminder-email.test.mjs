@@ -1,11 +1,22 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildReminderEmailHtml, taxTypeLabel } from "../scripts/lib/reminder-email.mjs";
+import { buildReminderEmailHtml, paymentTransferTitle, taxTypeLabel } from "../scripts/lib/reminder-email.mjs";
 
 test("taxTypeLabel maps known tax types and falls back to uppercase for unknown ones", () => {
   assert.equal(taxTypeLabel("vat"), "VAT");
   assert.equal(taxTypeLabel("zus"), "ZUS");
   assert.equal(taxTypeLabel("mystery"), "MYSTERY");
+});
+
+test("paymentTransferTitle appends the immutable payment reference exactly once", () => {
+  assert.equal(
+    paymentTransferTitle({ transferTitle: "VAT 08/2026", taxType: "vat", periodLabel: "08/2026", paymentReference: "EP-A1B2C3D4" }),
+    "VAT 08/2026 | Ref. EP-A1B2C3D4",
+  );
+  assert.equal(
+    paymentTransferTitle({ transferTitle: "VAT 08/2026 | Ref. EP-A1B2C3D4", taxType: "vat", periodLabel: "08/2026", paymentReference: "EP-A1B2C3D4" }),
+    "VAT 08/2026 | Ref. EP-A1B2C3D4",
+  );
 });
 
 test("buildReminderEmailHtml includes amount, due date, and days-until-due", () => {

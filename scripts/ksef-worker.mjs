@@ -22,6 +22,7 @@ import { checkNipBankAccount } from "./lib/whitelist-client.mjs";
 import { sendEmail } from "./lib/smtp-client.mjs";
 import { buildReminderEmailHtml, taxTypeLabel } from "./lib/reminder-email.mjs";
 import { buildLeadNotificationEmailHtml } from "./lib/lead-email.mjs";
+import { buildInvitationEmailHtml } from "./lib/invitation-email.mjs";
 
 const { Pool } = pg;
 
@@ -527,7 +528,13 @@ async function handleInvoiceIssue(job) {
   const pollAttempts = Number(job.data.payload?.pollAttempts || 0);
 
   const invoiceRow = await withTenant(tenantId, actorUserId, async (client) => {
-    const result = await client.query("select * from issued_invoices where id = $1", [invoiceId]);
+    const result = await client.query(
+      `select invoice.*, company.name as client_company_name
+       from issued_invoices invoice
+       join client_companies company on company.id = invoice.client_company_id
+       where invoice.id = $1`,
+      [invoiceId],
+    );
     return result.rows[0] || null;
   });
   if (!invoiceRow) {
@@ -687,6 +694,8 @@ async function handleInvoiceIssue(job) {
                   source: "issued_invoice",
                   ksef_number: statusResult.ksefNumber,
                   invoice_number: invoiceRow.invoice_number,
+                  recipient_name: invoiceRow.client_company_name,
+                  ...(invoiceRow.bank_account_number ? { bank_account_number: invoiceRow.bank_account_number } : {}),
                 }),
               ],
             );
@@ -798,6 +807,7 @@ async function handlePaymentReminders() {
   const rows = await withUser(supervisorUserId, async (client) => {
     const result = await client.query(`
       select payment.id, payment.amount, payment.currency, payment.due_date::text, payment.tax_type,
+        payment.payment_reference,
         payment.period_label, payment.metadata, company.email as company_email, company.name as company_name,
         tenant.display_name as tenant_name
       from payments payment
@@ -806,6 +816,7 @@ async function handlePaymentReminders() {
       where payment.status in ('due', 'failed')
         and payment.metadata->>'source' is distinct from 'issued_invoice'
         and company.email is not null and company.deleted_at is null
+        and coalesce(tenant.settings->'notifications'->>'paymentReminders', 'true') = 'true'
         and (payment.due_date - current_date) in (7, 2)
         and coalesce(payment.metadata->>'last_reminder_sent_at', '') <> current_date::text
     `);
@@ -825,6 +836,7 @@ async function handlePaymentReminders() {
       recipientName: row.metadata?.recipient_name || null,
       bankAccountNumber: row.metadata?.bank_account_number || null,
       transferTitle: row.metadata?.transfer_title || row.metadata?.invoice_number || null,
+      paymentReference: row.payment_reference,
       daysUntilDue,
     });
     const outcome = await sendEmail({
@@ -882,12 +894,32 @@ async function handleLeadNotify(job) {
   }
 }
 
+async function handleAccountInvite(job) {
+  const { email, fullName, tenantName, companyName, activationUrl, expiresAt } = job.data.payload || {};
+  if (!email || !activationUrl) throw new Error("Zaproszenie nie zawiera adresu e-mail lub linku aktywacyjnego.");
+  const html = buildInvitationEmailHtml({ fullName, tenantName, companyName, activationUrl, expiresAt });
+  const outcome = await sendEmail({
+    host: smtpHost,
+    port: smtpPort,
+    secure: smtpSecure,
+    user: smtpUser,
+    pass: smtpPassword,
+    from: smtpFrom,
+    to: email,
+    subject: `Zaproszenie do portalu ${tenantName || "Epito"}`,
+    html,
+    replyTo: smtpReplyTo,
+  });
+  if (!outcome.ok) throw new Error(outcome.error || "Nie udało się wysłać zaproszenia.");
+}
+
 async function processJob(job) {
   if (job.name === "ksef.sync") return handleKsefSync(job);
   if (job.name === "invoice.issue") return handleInvoiceIssue(job);
   if (job.name === "whitelist.verify") return handleWhitelistVerify(job);
   if (job.name === "payment.remind") return handlePaymentReminders(job);
   if (job.name === "lead.notify") return handleLeadNotify(job);
+  if (job.name === "account.invite") return handleAccountInvite(job);
 }
 
 const worker = new Worker("integrations", processJob, {

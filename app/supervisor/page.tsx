@@ -671,6 +671,7 @@ function ModalFrame({ title, description, onClose, children }: { title: string; 
 }
 
 function PasswordForm() {
+  const router = useRouter();
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState("");
   async function changePassword(event: FormEvent<HTMLFormElement>) {
@@ -680,8 +681,12 @@ function PasswordForm() {
     setMessage("");
     try {
       const response = await fetch("/api/auth/password", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(Object.fromEntries(new FormData(formElement).entries())) });
-      const payload = (await response.json()) as { error?: string };
+      const payload = (await response.json()) as { error?: string; reauthenticate?: boolean };
       if (!response.ok) throw new Error(payload.error || "Nie udało się zmienić hasła.");
+      if (payload.reauthenticate) {
+        router.replace("/logowanie?haslo=zmienione");
+        return;
+      }
       formElement.reset();
       setMessage("Hasło zostało zmienione.");
     } catch (reason) {

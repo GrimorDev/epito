@@ -9,6 +9,7 @@ Stack uruchamia:
 - `redis` — Redis 7 z AOF dla sesji, rate limitingu i kolejek,
 - `document-worker` — odczyt tekstu PDF i lokalny OCR faktur wykonywany poza procesem aplikacji,
 - `ksef-worker` — synchronizacja faktur klientów z Krajowym Systemem e-Faktur (KSeF),
+- `backup` — szyfrowane kopie PostgreSQL i dokumentów z automatycznym testem integralności,
 - `migrate` — migracje oraz bezpieczne utworzenie konta supervisora.
 
 PostgreSQL i Redis nie publikują portów na hoście. Są dostępne tylko w izolowanej sieci `backend-internal`.
@@ -43,15 +44,19 @@ W sekcji `Environment variables` dodaj wszystkie poniższe pozycje:
 | `EPITO_SMTP_SECURE` | `true` dla portu `465` (SSL/TLS od razu), inaczej zostaw `false` |
 | `EPITO_SMTP_USER` | adres skrzynki, np. `biuro@epito.pl` — z niej wysyłane są zgłoszenia pilotażu i przypomnienia o płatnościach bezpośrednio przez SMTP tej skrzynki, bez pośrednika |
 | `EPITO_SMTP_PASSWORD` | hasło tej skrzynki |
+| `EPITO_BACKUP_ENCRYPTION_PASSWORD` | osobne losowe hasło szyfrujące kopie, minimum 32 znaki; utrata hasła uniemożliwi odtworzenie backupu |
 | `EPITO_SMTP_FROM` | nadawca w nagłówku From — opcjonalny, domyślnie taki sam jak `EPITO_SMTP_USER` |
 | `EPITO_SMTP_REPLY_TO` | adres, na który trafiają odpowiedzi klientów na przypomnienia, np. `support@epito.pl` — opcjonalny, zostaw puste żeby wyłączyć |
 | `EPITO_BASE_DOMAIN` | produkcyjna domena bazowa, na przykład `epito.pl` |
 | `EPITO_PORT` | port hosta, domyślnie `8063` |
 | `EPITO_UPLOADS_VOLUME` | opcjonalna nazwa trwałego wolumenu dokumentów, domyślnie `epito-uploads-data` |
+| `EPITO_BACKUP_VOLUME` | opcjonalna nazwa wolumenu szyfrowanych kopii, domyślnie `epito-backups` |
+| `EPITO_BACKUP_RETENTION_DAYS` | lokalna retencja kopii, domyślnie 14 dni |
+| `EPITO_BACKUP_INTERVAL_SECONDS` | interwał kopii, domyślnie 86400 sekund |
 
-Pięć haseł/kluczy technicznych (`EPITO_POSTGRES_ADMIN_PASSWORD`, `EPITO_DB_PASSWORD`, `EPITO_REDIS_PASSWORD`, `EPITO_SUPERVISOR_PASSWORD`, `EPITO_KSEF_ENCRYPTION_KEY`) musi być różnych. Wygeneruj je w menedżerze haseł. `EPITO_SMTP_PASSWORD` to hasło do istniejącej już skrzynki pocztowej — nie generuj go, tylko wpisz aktualne hasło tej skrzynki. Nie umieszczaj żadnego z nich w repozytorium ani w pliku `.env` przesyłanym do Git.
+Sześć haseł/kluczy technicznych (`EPITO_POSTGRES_ADMIN_PASSWORD`, `EPITO_DB_PASSWORD`, `EPITO_REDIS_PASSWORD`, `EPITO_SUPERVISOR_PASSWORD`, `EPITO_KSEF_ENCRYPTION_KEY`, `EPITO_BACKUP_ENCRYPTION_PASSWORD`) musi być różnych. Wygeneruj je w menedżerze haseł. `EPITO_SMTP_PASSWORD` to hasło do istniejącej już skrzynki pocztowej — nie generuj go, tylko wpisz aktualne hasło tej skrzynki. Nie umieszczaj żadnego z nich w repozytorium ani w pliku `.env` przesyłanym do Git.
 
-Compose pobiera sześć wartości z konfiguracji Portainera (pięć haseł/kluczy technicznych i hasło skrzynki SMTP) i udostępnia je kontenerom jako pliki w `/run/secrets`. Nie trafiają do zmiennych środowiskowych uruchomionych usług i nie pojawiają się w `docker inspect` kontenerów. Pozostają jednak dostępne administratorom Portainera, dlatego dostęp do stacka powinien być ograniczony do administratorów.
+Compose pobiera wartości wrażliwe z konfiguracji Portainera i udostępnia je kontenerom jako pliki w `/run/secrets`. Nie trafiają do zmiennych środowiskowych uruchomionych usług i nie pojawiają się w `docker inspect` kontenerów. Pozostają jednak dostępne administratorom Portainera, dlatego dostęp do stacka powinien być ograniczony do administratorów.
 
 Pozostałe ustawienia mają bezpieczne wartości domyślne:
 
@@ -60,6 +65,7 @@ Pozostałe ustawienia mają bezpieczne wartości domyślne:
 | `EPITO_IMAGE` | `epito:server` |
 | `EPITO_WORKER_IMAGE` | `epito-document-worker:server` |
 | `EPITO_KSEF_WORKER_IMAGE` | `epito-ksef-worker:server` |
+| `EPITO_BACKUP_IMAGE` | `epito-backup:server` |
 | `EPITO_KSEF_POLL_INTERVAL_MS` | `600000` (10 minut) — jak często automatycznie synchronizowane jest każde połączenie KSeF w tle |
 | `EPITO_PULL_POLICY` | `build` |
 | `EPITO_DATABASE_NAME` | `epito_prod` |
@@ -100,13 +106,9 @@ Operacje organizacji działają w transakcji ustawiającej `app.current_tenant_i
 
 ## 6. Kopie zapasowe
 
-Przykładowy backup PostgreSQL:
+Usługa `backup` wykonuje pierwszą kopię po uruchomieniu, a następnie domyślnie co 24 godziny. Osobno zapisuje PostgreSQL i wolumen dokumentów, szyfruje oba archiwa AES-256 z PBKDF2, generuje sumy SHA-256 i przed oznaczeniem sukcesu sprawdza, czy zrzut oraz archiwum dają się odczytać. Kopie trafiają do wolumenu `epito-backups`; domyślna retencja wynosi 14 dni.
 
-```bash
-docker exec epito-postgres sh -c 'PGPASSWORD="$(cat /run/secrets/postgres_admin_password)" pg_dump -U epito_admin -d epito_prod -Fc' > epito-$(date +%F-%H%M).dump
-```
-
-Przechowuj kopie poza VPS-em i regularnie testuj odtwarzanie. Oprócz PostgreSQL wykonuj kopię wolumenu `epito-uploads-data`, ponieważ zawiera przesłane dokumenty. Wolumen nie jest kopią zapasową.
+Wolumen backupu nadal znajduje się na tym samym serwerze. Skonfiguruj dodatkową, szyfrowaną replikację katalogu/volumenu `epito-backups` poza VPS i wykonuj próbne odtworzenie co najmniej raz na kwartał. Hasło `EPITO_BACKUP_ENCRYPTION_PASSWORD` przechowuj w menedżerze haseł poza serwerem. Bez niego kopii nie da się odszyfrować.
 
 ## 7. Aktualizacja
 

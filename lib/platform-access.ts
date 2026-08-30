@@ -19,7 +19,7 @@ export const platformRoleLabels: Record<PlatformRole, string> = {
 };
 
 export const platformRoleDescriptions: Record<(typeof platformRoles)[number], string> = {
-  helpdesk: "Obsługa zgłoszeń i podgląd danych organizacji.",
+  helpdesk: "Obsługa zgłoszeń bez dostępu do dokumentów i finansów organizacji.",
   moderator: "Kontrola treści, zdarzeń i zgłoszeń wymagających reakcji.",
   developer: "Diagnostyka techniczna oraz naprawy w panelach klientów.",
   admin: "Zarządzanie organizacjami i operacjami platformy.",

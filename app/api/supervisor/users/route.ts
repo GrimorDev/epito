@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { canManagePlatformTeam, isPlatformStaff, platformRoles } from "@/lib/platform-access";
+import { canEditTenantData, canManagePlatformTeam, platformRoles } from "@/lib/platform-access";
 import { getSession, isSameOrigin } from "@/lib/server/auth";
 import { withUserTransaction } from "@/lib/server/database";
 import { hashPassword, validatePassword } from "@/lib/server/passwords";
@@ -18,7 +18,7 @@ function databaseStatus(error: unknown) {
 
 export async function GET(request: NextRequest) {
   const session = await getSession(request);
-  if (!session || !isPlatformStaff(session.platformRole)) {
+  if (!session || !canEditTenantData(session.platformRole)) {
     return NextResponse.json({ error: "Brak dostępu." }, { status: 401 });
   }
 
@@ -150,7 +150,7 @@ export async function PATCH(request: NextRequest) {
           if (Number(supervisors.rows[0]?.count || 0) <= 1) throw new Error("LAST_SUPERVISOR");
         }
         await client.query(
-          "update users set platform_role = $1, status = $2, updated_at = now() where id = $3",
+          "update users set platform_role = $1, status = $2, auth_version = auth_version + 1, updated_at = now() where id = $3",
           [platformRole, status, userId],
         );
         await client.query(
@@ -186,6 +186,10 @@ export async function PATCH(request: NextRequest) {
         await client.query(
           "update tenant_memberships set role = $1, status = $2, updated_at = now() where tenant_id = $3 and user_id = $4",
           [role, status, tenantId, userId],
+        );
+        await client.query(
+          "update users set auth_version = auth_version + 1, updated_at = now() where id = $1",
+          [userId],
         );
         await client.query(
           `insert into audit_log (tenant_id, actor_user_id, action, entity_type, entity_id, after_data)
